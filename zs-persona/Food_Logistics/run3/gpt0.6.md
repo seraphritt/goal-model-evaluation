@@ -1,0 +1,121 @@
+**Goal Model – Multi‑Robot Food Delivery & Dish Retrieval**
+
+| **Name**                              | **Text**                                                                                                | **Runtime**                                                  | **Goal Type** | **Target Condition / Enquired Information**          | **Relation** | **Ground truth I** | **Ground truth C** | **Ground truth E** |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------- | ---------------------------------------------------- | ------------ | ------------------ | ------------------ | ------------------ |
+| G1: Deliver food & clean dishes       | Achieve the delivery of food from the kitchen to an inpatient room **and** the cleanup of dirty dishes. | (FALLBACK(G2, G3) ; G4)                                      | Achieve       | Food delivered to patient **and** dishes cleaned.    | AND          | Perform            |  Perform                  |                    |
+| G2: Direct table delivery             | Deliver food directly onto the patient’s table.                                                         | G2.1 ; G2.2 ; G2.3                                           | Achieve       | Food placed on the table.                            | AND          | Perform            |  Perform                  |                    |
+| G2.1: Move to room                    | Move the robot from the kitchen to the patient room.                                                    | –                                                            | Perform       | –                                                    | AND          | Ok                 |  OK                  |                    |
+| G2.2: Manipulate onto table           | Manipulate the food onto the patient’s table.                                                           | –                                                            | Perform       | –                                                    | AND          | OK                 |  OK                  |                    |
+| G2.3: Open door (if needed)           | Ensure the patient room door is open.                                                                   | FALLBACK(AT14, AT15)                                         | Perform       | –                                                    | OR           | OK                 |  OK                  |                    |
+| G3: Tray-delivery & retrieval         | Deliver food onto the robot’s tray and coordinate its retrieval by the patient/companion/nurse.         | G3.1 ; G3.2 ; G3.3 ; G3.4 ; G3.5 ; G3.6 ; G3.7 ; G3.8 ; G3.9 | Achieve       | Food placed on tray, patient retrieves correct meal. | AND          | Perform            |  Perform                  |                    |
+| G3.1: Place on tray                   | Place the food onto the robot’s tray.                                                                   | –                                                            | Perform       | –                                                    | AND          | OK                 |  OK                  |                    |
+| G3.2: Query patient retrieval         | Enquire whether the patient can retrieve the meal from the tray.                                        | –                                                            | Query         | “Can patient retrieve from tray?”                    | AND          | OK                 |  OK                  |                    |
+| G3.3: Query companion presence        | Enquire whether a companion visitor is present.                                                         | –                                                            | Query         | “Is a companion present?”                            | AND          | OK                 |  OK                  |                    |
+| G3.4: Query nurse presence            | Enquire whether a nurse is present.                                                                     | –                                                            | Query         | “Is a nurse present?”                                | AND          | OK                 |  OK                  |                    |
+| G3.5: Coordinate retrieval            | Communicate with patient/companion/nurse to arrange retrieval.                                          | –                                                            | Perform       | –                                                    | AND          | OK                 |  OK                  |                    |
+| G3.6: Monitor retrieval               | Observe the patient/companion/nurse retrieving the meal.                                                | –                                                            | Perform       | –                                                    | AND          | ok                 |  OK                  |                    |
+| G3.7: Verify meal identity            | Verify that the retrieved meal matches the order.                                                       | –                                                            | Perform       | –                                                    | AND          | OK                 |  OK                  |                    |
+| G3.8: Alert wrong meal                | Alert the system if an incorrect meal is retrieved.                                                     | –                                                            | Perform       | –                                                    | AND          | OK                 |  OK                  |                    |
+| G3.9: Door opening for retrieval      | Ensure the door is open for the retrieval process.                                                      | FALLBACK(AT14, AT15)                                         | Perform       | –                                                    | OR           | OK                 |  OK                  |                    |
+| G4: Dish retrieval                    | Clean dirty dishes from the patient room.                                                               | (FALLBACK(FALLBACK(G4.1, G4.2), G4.3) ; G4.4)                | Achieve       | All dirty dishes removed.                            | AND          | OK                 |  Perform                  |                    |
+| G4.1: Unassisted retrieval            | Retrieve dishes using a single robot.                                                                   | –                                                            | Perform       | –                                                    | AND          | OK                 |  OK                  |                    |
+| G4.2: Two-robot retrieval             | Retrieve dishes using two cooperating robots.                                                           | –                                                            | Perform       | –                                                    | AND          | OK                 |  OK                  |                    |
+| G4.3: Human-assisted retrieval        | Retrieve dishes with the help of a human.                                                               | –                                                            | Perform       | –                                                    | AND          | OK                 |  OK                  |                    |
+| G4.4: Door opening for dish retrieval | Ensure the door is open during dish retrieval.                                                          | FALLBACK(AT14, AT15)                                         | Perform       | –                                                    | OR           | OK                 |  OK                  |                    |
+OK
+
+---
+
+### Task Model
+
+| **Name** | **Text** | **Relation** | **Location** | **Number of Robots** |
+|----------|----------|--------------|--------------|----------------------|
+| AT1: Move to room | Robot moves from the kitchen to the patient room. | AND (with G2.1) | Hospital (kitchen → patient room) | 1 |
+| AT2: Manipulate onto table | Robot manipulates the food onto the patient’s table. | AND (with G2.2) | Patient room | 1 |
+| AT3: Place on tray | Robot places the food onto its tray. | AND (with G3.1) | Patient room | 1 |
+| AT4: Query patient retrieval | Robot queries the patient record for retrieval capability. | AND (with G3.2) | Robot internal | 1 |
+| AT5: Query companion presence | Robot queries the patient record for companion presence. | AND (with G3.3) | Robot internal | 1 |
+| AT6: Query nurse presence | Robot queries the patient record for nurse presence. | AND (with G3.4) | Robot internal | 1 |
+| AT7: Coordinate retrieval | Robot communicates with patient/companion/nurse to arrange retrieval. | AND (with G3.5) | Patient room | 1 |
+| AT8: Monitor retrieval | Robot observes the patient/companion/nurse retrieving the meal. | AND (with G3.6) | Patient room | 1 |
+| AT9: Verify meal identity | Robot verifies the retrieved meal matches the order. | AND (with G3.7) | Patient room | 1 |
+| AT10: Alert wrong meal | Robot alerts the system if an incorrect meal is retrieved. | AND (with G3.8) | Robot | 1 |
+| AT11: Unassisted dish retrieval | Robot retrieves dirty dishes alone. | AND (with G4.1) | Patient room | 1 |
+| AT12: Two‑robot dish retrieval | Two robots cooperate to retrieve dirty dishes. | AND (with G4.2) | Patient room | [2,2] |
+| AT13: Human‑assisted dish retrieval | Robot retrieves dishes with help from a human. | AND (with G4.3) | Patient room | 1 |
+| AT14: Open door robot | Robot opens the patient room door. | AND (with G2.3, G3.9, G4.4) | Patient room door | 1 |
+| AT15: Open door human | Human opens the patient room door. | AND (with G2.3, G3.9, G4.4) | Patient room door | 1 |
+
+---
+
+### Summary Table (Goals & Tasks)
+
+| **ID** | **Title** | **Type** | **Runtime / Relation** | **Location** | **Robots** |
+|--------|-----------|----------|------------------------|--------------|------------|
+| G1 | Deliver food & clean dishes | Achieve | (FALLBACK(G2,G3);G4) – AND | – | – |
+| G2 | Direct table delivery | Achieve | G2.1;G2.2;G2.3 – AND | – | – |
+| G2.1 | Move to room | Perform | – | – | 1 |
+| G2.2 | Manipulate onto table | Perform | – | – | 1 |
+| G2.3 | Open door | Perform | FALLBACK(AT14,AT15) – OR | – | 1 |
+| G3 | Tray‑delivery & retrieval | Achieve | G3.1…G3.9 – AND | – | – |
+| G3.1 | Place on tray | Perform | – | – | 1 |
+| G3.2 | Query patient retrieval | Query | – | – | 1 |
+| G3.3 | Query companion presence | Query | – | – | 1 |
+| G3.4 | Query nurse presence | Query | – | – | 1 |
+| G3.5 | Coordinate retrieval | Perform | – | – | 1 |
+| G3.6 | Monitor retrieval | Perform | – | – | 1 |
+| G3.7 | Verify meal identity | Perform | – | – | 1 |
+| G3.8 | Alert wrong meal | Perform | – | – | 1 |
+| G3.9 | Door opening for retrieval | Perform | FALLBACK(AT14,AT15) – OR | – | 1 |
+| G4 | Dish retrieval | Achieve | (FALLBACK(FALLBACK(G4.1,G4.2),G4.3);G4.4) – AND | – | – |
+| G4.1 | Unassisted retrieval | Perform | – | – | 1 |
+| G4.2 | Two‑robot retrieval | Perform | – | – | [2,2] |
+| G4.3 | Human‑assisted retrieval | Perform | – | – | 1 |
+| G4.4 | Door opening for dish retrieval | Perform | FALLBACK(AT14,AT15) – OR | – | 1 |
+| AT1 | Move to room | – | – | Hospital | 1 |
+| AT2 | Manipulate onto table | – | – | Patient room | 1 |
+| AT3 | Place on tray | – | – | Patient room | 1 |
+| AT4 | Query patient retrieval | – | – | Robot internal | 1 |
+| AT5 | Query companion presence | – | – | Robot internal | 1 |
+| AT6 | Query nurse presence | – | – | Robot internal | 1 |
+| AT7 | Coordinate retrieval | – | – | Patient room | 1 |
+| AT8 | Monitor retrieval | – | – | Patient room | 1 |
+| AT9 | Verify meal identity | – | – | Patient room | 1 |
+| AT10 | Alert wrong meal | – | – | Robot | 1 |
+| AT11 | Unassisted dish retrieval | – | – | Patient room | 1 |
+| AT12 | Two‑robot dish retrieval | – | – | Patient room | [2,2] |
+| AT13 | Human‑assisted dish retrieval | – | – | Patient room | 1 |
+| AT14 | Open door robot | – | – | Patient room door | 1 |
+| AT15 | Open door human | – | – | Patient room door | 1 |
+
+---
+
+### Logical Relationships
+
+```
+G1 -> G2, G3, G4 [AND] [(FALLBACK(G2, G3) ; G4)]
+G2 -> G2.1, G2.2, G2.3 [AND] [G2.1 ; G2.2 ; G2.3]
+G2.3 -> AT14, AT15 [OR] [FALLBACK(AT14, AT15)]
+G3 -> G3.1, G3.2, G3.3, G3.4, G3.5, G3.6, G3.7, G3.8, G3.9 [AND] [G3.1 ; G3.2 ; G3.3 ; G3.4 ; G3.5 ; G3.6 ; G3.7 ; G3.8 ; G3.9]
+G3.9 -> AT14, AT15 [OR] [FALLBACK(AT14, AT15)]
+G4 -> G4.1, G4.2, G4.3, G4.4 [AND] [(FALLBACK(FALLBACK(G4.1, G4.2), G4.3) ; G4.4]
+G4.4 -> AT14, AT15 [OR] [FALLBACK(AT14, AT15)]
+
+AT1 -> G2.1 [AND]
+AT2 -> G2.2 [AND]
+AT3 -> G3.1 [AND]
+AT4 -> G3.2 [AND]
+AT5 -> G3.3 [AND]
+AT6 -> G3.4 [AND]
+AT7 -> G3.5 [AND]
+AT8 -> G3.6 [AND]
+AT9 -> G3.7 [AND]
+AT10 -> G3.8 [AND]
+AT11 -> G4.1 [AND]
+AT12 -> G4.2 [AND]
+AT13 -> G4.3 [AND]
+AT14 -> G2.3, G3.9, G4.4 [AND]
+AT15 -> G2.3, G3.9, G4.4 [AND]
+```
+
+This model decomposes the multi‑robot food delivery and dish retrieval mission into a clear hierarchy of goals and actionable tasks, explicitly stating the runtime execution structure, goal types, and the relationships between all elements.

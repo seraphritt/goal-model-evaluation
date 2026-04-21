@@ -1,0 +1,130 @@
+**Goal Model – Multi‑Robot Resource Collection & Delivery**
+
+---
+
+## 1. Goal Table  
+
+| Name                                           | Text                                                                           | Runtime | Goal Type | Target Condition / Enquired Information | Relation                                | Ground truth I | Ground truth C | Ground truth E |
+| ---------------------------------------------- | ------------------------------------------------------------------------------ | ------- | --------- | --------------------------------------- | --------------------------------------- | -------------- | -------------- | -------------- |
+| **G1: Execute Mission**                        | Execute the resource collection and delivery mission for the requesting agent. | `;`     | Perform   | –                                       | AND (to G2, G3)                         | OK               | OK               |                |
+| **G2: Collect Resources**                      | Collect required resources from all specified storages.                        | `#`     | Perform   | –                                       | AND (to G2.1, G2.2, G2.3)               | Achieve. Target condition: all resources were collected               | OK               |                |
+| **G2.1: Plan Collection Route**                | Compute optimal route to visit all required storages.                          | `-`     | Perform   | –                                       | AND (to AT1)                            | OK               | OK               |                |
+| **G2.2: Execute Collection**                   | Perform the collection of resources from storages.                             | `;`     | Perform   | –                                       | AND (to G2.2.1, G2.2.2, G2.2.3, G2.2.4) | OK               | OK               |                |
+| **G2.2.1: Navigate to Storage**                | Navigate to the storage location to collect resources.                         | `-`     | Perform   | –                                       | AND (to AT2)                            | OK               | OK               |                |
+| **G2.2.2: Request Resources**                  | Send request to storage for the specified resources.                           | `-`     | Perform   | –                                       | AND (to AT3)                            | Query. Enqueried Information: resources to be collected.               | OK               |                |
+| **G2.2.3: Wait for Retrieval**                 | Wait until the resources are retrieved from storage.                           | `-`     | Perform   | –                                       | AND (to AT4)                            |  OK              | OK               |                |
+| **G2.2.4: Return to Next Storage or Base**     | Return to the next storage or base after collection.                           | `-`     | Perform   | –                                       | AND (to AT5)                            | OK               | OK               |                |
+| **G2.3: Handle Low Battery During Collection** | Manage low battery situation during collection phase.                          | `;`     | Perform   | –                                       | AND (to G2.3.1, G2.3.2)                 | OK               | OK               |                |
+| **G2.3.1: Navigate to Recharge Station**       | Navigate to recharge station to recharge battery.                              | `-`     | Perform   | –                                       | AND (to AT6)                            | OK               |  OK              |                |
+| **G2.3.2: Assign Mission to Another Robot**    | Assign the remaining collection task to another robot.                         | `-`     | Perform   | –                                       | AND (to AT7)                            | OK               |  OK              |                |
+| **G3: Deliver Resources**                      | Deliver collected resources to the specified destination.                      | `#`     | Perform   | –                                       | AND (to G3.1, G3.2, G3.3, G3.4)         | Achieve. Target condition: all resources were delivered.               |  OK              |                |
+| **G3.1: Plan Delivery Route**                  | Compute optimal route to deliver resources to destination.                     | `-`     | Perform   | –                                       | AND (to AT8)                            | OK               | OK               |                |
+| **G3.2: Execute Delivery**                     | Perform the delivery of resources to destination.                              | `;`     | Perform   | –                                       | AND (to G3.2.1, G3.2.2, G3.2.3)         | OK               | OK               |                |
+| **G3.2.1: Navigate to Destination**            | Navigate to the destination location to deliver resources.                     | `-`     | Perform   | –                                       | AND (to AT9)                            | OK               |  OK              |                |
+| **G3.2.2: Deliver Resources**                  | Deliver the resources to the destination.                                      | `-`     | Perform   | –                                       | AND (to AT10)                           | OK               |  OK              |                |
+| **G3.2.3: Return to Checkpoint**               | Return to checkpoint after delivery.                                           | `-`     | Perform   | –                                       | AND (to AT11)                           | OK               |  OK              |                |
+| **G3.3: Handle Low Battery During Delivery**   | Manage low battery situation during delivery phase.                            | `;`     | Perform   | –                                       | AND (to G3.3.1, G3.3.2)                 | OK               |  OK              |                |
+| **G3.3.1: Navigate to Recharge Station**       | Navigate to recharge station during delivery.                                  | `-`     | Perform   | –                                       | AND (to AT12)                           | OK               |  OK              |                |
+| **G3.3.2: Return Resource to Checkpoint**      | Return the resource to checkpoint due to low battery.                          | `-`     | Perform   | –                                       | AND (to AT13)                           | OK               |  OK              |                |
+| **G3.4: Alert on Failure**                     | Trigger alert and report to sector manager if failure occurs.                  | `-`     | Perform   | –                                       | AND (to AT14)                           | OK               |  OK              |                |
+
+---
+
+## 2. Task Table  
+
+| Name | Text | Relation | Location | Number of Robots |
+|------|------|----------|----------|------------------|
+| **AT1: Compute Collection Route** | Compute optimal collection route to visit all required storages. | AND (to G2.1) | base | 1 |
+| **AT2: Navigate to Storage** | Navigate to the storage location to collect resources. | AND (to G2.2.1) | storage | 1 |
+| **AT3: Send Request for Resources** | Send request to storage for the specified resources. | AND (to G2.2.2) | storage | 1 |
+| **AT4: Wait for Retrieval** | Wait until the resources are retrieved from storage. | AND (to G2.2.3) | storage | 1 |
+| **AT5: Navigate to Next Storage or Base** | Navigate to the next storage or base after collection. | AND (to G2.2.4) | storage / base | 1 |
+| **AT6: Navigate to Recharge Station** | Navigate to recharge station to recharge battery. | AND (to G2.3.1) | recharge station | 1 |
+| **AT7: Assign Mission to Another Robot** | Assign the remaining collection task to another robot. | AND (to G2.3.2) | base | 1 |
+| **AT8: Compute Delivery Route** | Compute optimal delivery route to destination. | AND (to G3.1) | base | 1 |
+| **AT9: Navigate to Destination** | Navigate to the destination location to deliver resources. | AND (to G3.2.1) | destination | 1 |
+| **AT10: Deliver Resources** | Deliver the resources to the destination. | AND (to G3.2.2) | destination | 1 |
+| **AT11: Return to Checkpoint** | Return to checkpoint after delivery. | AND (to G3.2.3) | checkpoint | 1 |
+| **AT12: Navigate to Recharge Station (Delivery)** | Navigate to recharge station during delivery. | AND (to G3.3.1) | recharge station | 1 |
+| **AT13: Return Resource to Checkpoint** | Return the resource to checkpoint due to low battery. | AND (to G3.3.2) | checkpoint | 1 |
+| **AT14: Send Alert to Sector Manager** | Trigger alert and report to sector manager if failure occurs. | AND (to G3.4) | base | 1 |
+
+---
+
+## 3. Summary Table (All Goals & Tasks)
+
+| ID | Type | Title |
+|----|------|-------|
+| G1 | Goal | Execute Mission |
+| G2 | Goal | Collect Resources |
+| G2.1 | Goal | Plan Collection Route |
+| G2.2 | Goal | Execute Collection |
+| G2.2.1 | Goal | Navigate to Storage |
+| G2.2.2 | Goal | Request Resources |
+| G2.2.3 | Goal | Wait for Retrieval |
+| G2.2.4 | Goal | Return to Next Storage or Base |
+| G2.3 | Goal | Handle Low Battery During Collection |
+| G2.3.1 | Goal | Navigate to Recharge Station |
+| G2.3.2 | Goal | Assign Mission to Another Robot |
+| G3 | Goal | Deliver Resources |
+| G3.1 | Goal | Plan Delivery Route |
+| G3.2 | Goal | Execute Delivery |
+| G3.2.1 | Goal | Navigate to Destination |
+| G3.2.2 | Goal | Deliver Resources |
+| G3.2.3 | Goal | Return to Checkpoint |
+| G3.3 | Goal | Handle Low Battery During Delivery |
+| G3.3.1 | Goal | Navigate to Recharge Station |
+| G3.3.2 | Goal | Return Resource to Checkpoint |
+| G3.4 | Goal | Alert on Failure |
+| AT1 | Task | Compute Collection Route |
+| AT2 | Task | Navigate to Storage |
+| AT3 | Task | Send Request for Resources |
+| AT4 | Task | Wait for Retrieval |
+| AT5 | Task | Navigate to Next Storage or Base |
+| AT6 | Task | Navigate to Recharge Station |
+| AT7 | Task | Assign Mission to Another Robot |
+| AT8 | Task | Compute Delivery Route |
+| AT9 | Task | Navigate to Destination |
+| AT10 | Task | Deliver Resources |
+| AT11 | Task | Return to Checkpoint |
+| AT12 | Task | Navigate to Recharge Station (Delivery) |
+| AT13 | Task | Return Resource to Checkpoint |
+| AT14 | Task | Send Alert to Sector Manager |
+
+---
+
+## 4. Logical Relationships  
+
+```
+G1  -> G2, G3                [AND][;]
+G2  -> G2.1, G2.2, G2.3      [AND][#]
+G2.1 -> AT1                  [AND][-]
+G2.2 -> G2.2.1, G2.2.2, G2.2.3, G2.2.4   [AND][;]
+G2.2.1 -> AT2               [AND][-]
+G2.2.2 -> AT3               [AND][-]
+G2.2.3 -> AT4               [AND][-]
+G2.2.4 -> AT5               [AND][-]
+G2.3 -> G2.3.1, G2.3.2      [AND][;]
+G2.3.1 -> AT6               [AND][-]
+G2.3.2 -> AT7               [AND][-]
+G3  -> G3.1, G3.2, G3.3, G3.4   [AND][#]
+G3.1 -> AT8                  [AND][-]
+G3.2 -> G3.2.1, G3.2.2, G3.2.3   [AND][;]
+G3.2.1 -> AT9                [AND][-]
+G3.2.2 -> AT10               [AND][-]
+G3.2.3 -> AT11               [AND][-]
+G3.3 -> G3.3.1, G3.3.2      [AND][;]
+G3.3.1 -> AT12               [AND][-]
+G3.3.2 -> AT13               [AND][-]
+G3.4 -> AT14                 [AND][-]
+```
+
+---
+
+### Notes on Runtime Annotations  
+
+* `;` – Sequential execution (parent goal waits for each child to finish before starting the next).  
+* `#` – Parallel execution (children can run concurrently).  
+* `-` – Leaf goal or task (no further decomposition).  
+
+This goal model captures the full mission flow, battery‑management contingencies, and parallelism opportunities for multi‑robot coordination.

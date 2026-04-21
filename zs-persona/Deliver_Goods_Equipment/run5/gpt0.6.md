@@ -1,0 +1,99 @@
+**Goal Model – Multi‑Robot Resource Collection & Delivery**
+
+| **Name** | **Text**                                     | **Runtime** | **Goal Type** | **Enquired Information / Target Condition** | **Relation** | **Ground truth I** | **Ground truth C** | **Ground truth E** |
+| -------- | -------------------------------------------- | ----------- | ------------- | ------------------------------------------- | ------------ | ------------------ | ------------------ | ------------------ |
+| G1       | Fulfill resource request                     | ;           | Perform       | –                                           | AND          |  OK                  | OK                   |                    |
+| G2       | Collect resources                            | ;           | Perform       | –                                           | AND          |  Achieve. Target condition: all resources were collected.                | OK                   |                    |
+| G2.1     | Plan collection route                        | –           | Query         | Estimated waiting time + path               | –            |  OK                  |  OK                  |                    |
+| G2.2     | Request resources                            | –           | Perform       | –                                           | –            |  Query. Enqueried information: resources to be collected                  | OK                   |                    |
+| G2.3     | Wait for retrieval                           | –           | Perform       | –                                           | –            | OK                   |OK                    |                    |
+| G2.4     | Handle low battery during collection         | –           | Perform       | –                                           | –            | OK                   | OK                   |                    |
+| G3       | Deliver resources                            | ;           | Perform       | –                                           | AND          |  Achieve. Target condition: all resources were delivered.                   | OK                   |                    |
+| G3.1     | Plan delivery route                          | –           | Query         | Optimal path to destination                 | –            | OK                   |OK                    |                    |
+| G3.2     | Transport resources                          | –           | Perform       | –                                           | –            | OK                   |OK                    |                    |
+| G3.3     | Handle low battery during delivery           | –           | Perform       | –                                           | –            | OK                   |OK                    |                    |
+| G3.4     | Return resource to checkpoint if battery low | –           | Perform       | –                                           | –            | OK                   |OK                    |                    |
+| G3.5     | Assign remaining tasks to another robot      | –           | Perform       | –                                           | –            | OK                   | OK                   |                    |
+| G4       | Handle failures                              | ;           | Perform       | –                                           | AND          | OK                   |OK                    |                    |
+| G4.1     | Attempt to return resource to checkpoint     | –           | Perform       | –                                           | –            | OK                   | OK                   |                    |
+| G4.2     | Trigger alert if failure                     | –           | Perform       | –                                           | –            | OK                   | OK                   |                    |
+| G4.3     | Send report to sector manager                | –           | Perform       | –                                           | –            | OK                   | OK                   |                    |
+| G5       | Assign parallel collect-deliver tasks        | –           | Perform       | –                                           | –            | OK                   | OK                   |                    |
+
+
+---
+
+### Task Model
+
+| **Name** | **Text** | **Relation** | **Location** | **Number of Robots** |
+|----------|----------|--------------|--------------|----------------------|
+| AT1 | Send resource request to storage | – | Storage | 1 |
+| AT2 | Wait for resource retrieval | – | Storage | 1 |
+| AT3 | Check battery; if low, go to recharge station and re‑assign mission | – | Recharging Station | 1 |
+| AT4 | Compute delivery route to destination | – | Planning Module | 1 |
+| AT5 | Transport resources to destination | – | Destination | 1 |
+| AT6 | Check battery; if low, return resource to checkpoint and re‑assign | – | Current location | 1 |
+| AT7 | Return resource to checkpoint | – | Checkpoint | 1 |
+| AT8 | Assign remaining delivery tasks to another robot | – | Current location | 1 |
+| AT9 | Attempt to return resource to checkpoint after failure | – | Checkpoint | 1 |
+| AT10 | Trigger alert to sector manager | – | Sector Manager Office | 1 |
+| AT11 | Send detailed report to sector manager | – | Sector Manager Office | 1 |
+| AT12 | Assign parallel collect‑deliver tasks to multiple robots | – | Mission Control | [2,5] |
+
+---
+
+### Summary Table (Goals & Tasks)
+
+| **ID** | **Title** | **Type** | **Runtime / Relation** | **Location / Enquired Info** | **Number of Robots / Target** |
+|--------|-----------|----------|------------------------|------------------------------|--------------------------------|
+| G1 | Fulfill resource request | Goal – Perform | ; / AND | – | – |
+| G2 | Collect resources | Goal – Perform | ; / AND | – | – |
+| G2.1 | Plan collection route | Goal – Query | – / – | Estimated waiting time + path | – |
+| G2.2 | Request resources | Goal – Perform | – / – | – | – |
+| G2.3 | Wait for retrieval | Goal – Perform | – / – | – | – |
+| G2.4 | Handle low battery during collection | Goal – Perform | – / – | – | – |
+| G3 | Deliver resources | Goal – Perform | ; / AND | – | – |
+| G3.1 | Plan delivery route | Goal – Query | – / – | Optimal path to destination | – |
+| G3.2 | Transport resources | Goal – Perform | – / – | – | – |
+| G3.3 | Handle low battery during delivery | Goal – Perform | – / – | – | – |
+| G3.4 | Return resource to checkpoint if battery low | Goal – Perform | – / – | – | – |
+| G3.5 | Assign remaining tasks to another robot | Goal – Perform | – / – | – | – |
+| G4 | Handle failures | Goal – Perform | ; / AND | – | – |
+| G4.1 | Attempt to return resource to checkpoint | Goal – Perform | – / – | – | – |
+| G4.2 | Trigger alert if failure | Goal – Perform | – / – | – | – |
+| G4.3 | Send report to sector manager | Goal – Perform | – / – | – | – |
+| G5 | Assign parallel collect‑deliver tasks | Goal – Perform | – / – | – | – |
+| AT1 | Send resource request to storage | Task | – | Storage | 1 |
+| AT2 | Wait for resource retrieval | Task | – | Storage | 1 |
+| AT3 | Check battery; if low, go to recharge station and re‑assign mission | Task | – | Recharging Station | 1 |
+| AT4 | Compute delivery route to destination | Task | – | Planning Module | 1 |
+| AT5 | Transport resources to destination | Task | – | Destination | 1 |
+| AT6 | Check battery; if low, return resource to checkpoint and re‑assign | Task | – | Current location | 1 |
+| AT7 | Return resource to checkpoint | Task | – | Checkpoint | 1 |
+| AT8 | Assign remaining delivery tasks to another robot | Task | – | Current location | 1 |
+| AT9 | Attempt to return resource to checkpoint after failure | Task | – | Checkpoint | 1 |
+| AT10 | Trigger alert to sector manager | Task | – | Sector Manager Office | 1 |
+| AT11 | Send detailed report to sector manager | Task | – | Sector Manager Office | 1 |
+| AT12 | Assign parallel collect‑deliver tasks to multiple robots | Task | – | Mission Control | [2,5] |
+
+---
+
+### Logical Relationships
+
+- **G1 → G2, G3, G4, G5** [AND][;]  
+- **G2 → G2.1, G2.2, G2.3, G2.4** [AND][;]  
+- **G3 → G3.1, G3.2, G3.3, G3.4, G3.5** [AND][;]  
+- **G4 → G4.1, G4.2, G4.3** [AND][;]  
+- **G5** (no children)  
+- **G2.2 → AT1** [AND]  
+- **G2.3 → AT2** [AND]  
+- **G2.4 → AT3** [AND]  
+- **G3.1 → AT4** [AND]  
+- **G3.2 → AT5** [AND]  
+- **G3.3 → AT6** [AND]  
+- **G3.4 → AT7** [AND]  
+- **G3.5 → AT8** [AND]  
+- **G4.1 → AT9** [AND]  
+- **G4.2 → AT10** [AND]  
+- **G4.3 → AT11** [AND]  
+- **G5 → AT12** [AND]

@@ -1,0 +1,66 @@
+**Goal Model – Multi‑Robot Resource Delivery Mission**
+
+---
+
+### 1. Goal Table  
+
+| **Name**                                    | **Text**                                                                                                                                                  | **Runtime**      | **Goal Type** | **Enquired Information / Target Condition** | **Relation** | **Ground truth I**                                       | **Ground truth C** | **Ground truth E** |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | ------------- | ------------------------------------------- | ------------ | -------------------------------------------------------- | ------------------ | ------------------ |
+| **G1 – Complete Resource Delivery Mission** | Execute the entire mission of collecting required resources from storage locations and delivering them to the requesting agent at the specified location. | `;` (sequential) | Perform       | –                                           | AND          | OK                                                       | OK                   |                    |
+| **G2 – Determine Optimal Storage Order**    | Query the optimal sequence of storage locations to visit based on waiting time and path length.                                                           | `-` (leaf)       | Query         | *optimal storage order*                     | AND          | OK                                                       | Perform              |                    |
+| **G3 – Collect Resources**                  | Perform the collection phase: travel to storage locations, request resources, wait for retrieval, and handle battery constraints.                         | `#` (parallel)   | Perform       | –                                           | AND          | Achieve. Target condition: all resources were collected. | OK                   |                    |
+| **G4 – Deliver Resources**                  | Perform the delivery phase: transport collected resources to the specified location, manage battery, return to checkpoints, and handle failures.          | `#` (parallel)   | Perform       | –                                           | AND          | Achieve. Target condition: all resources were delivered. | OK                   |                    |
+
+
+---
+
+### 2. Task Table  
+
+| **Name** | **Text** | **Relation** | **Location** | **Number of Robots** |
+|----------|----------|--------------|--------------|----------------------|
+| **AT1 – Go to Storage** | Move robot from current location to the assigned storage location. | AND | *storage location* | 1 |
+| **AT2 – Request Resource** | Send request message to storage specifying required resources and await acknowledgment. | AND | *storage location* | 1 |
+| **AT3 – Wait for Resource** | Wait until the storage retrieves the requested resources and confirms availability. | AND | *storage location* | 1 |
+| **AT4 – Check Battery Level** | Query the robot’s battery level during collection phase. | AND | *robot* | 1 |
+| **AT5 – Handle Low Battery During Collection** | If battery ≤ 10 %, return to recharging station, then assign remaining collection tasks to another robot. | AND | *recharging station* | 1 |
+| **AT6 – Deliver to Destination** | Transport collected resources from storage to the specified delivery location. | AND | *destination location* | 1 |
+| **AT7 – Check Battery Level During Delivery** | Query the robot’s battery level during delivery phase. | AND | *robot* | 1 |
+| **AT8 – Return Resource to Checkpoint** | If battery ≤ 30 % during delivery, return the resource to the nearest checkpoint for safekeeping. | AND | *checkpoint* | 1 |
+| **AT9 – Handle Low Battery During Delivery** | After returning to checkpoint, assign remaining delivery tasks to another robot that knows the resource’s position. | AND | *checkpoint* | 1 |
+| **AT10 – Trigger Alert** | Generate an alert and send a report to the sector manager if the robot fails to return the resource to a checkpoint. | AND | *robot* | 1 |
+| **AT11 – Send Report** | Send mission status report to the sector manager after completion or failure. | AND | *robot* | 1 |
+
+---
+
+### 3. Summary Table (Goals + Tasks)
+
+| **ID** | **Title** | **Type** | **Runtime / Relation** | **Location / Enquired Info** | **# Robots** |
+|--------|-----------|----------|------------------------|-----------------------------|--------------|
+| **G1** | Complete Resource Delivery Mission | Perform | `;` / AND | – | – |
+| **G2** | Determine Optimal Storage Order | Query | `-` / AND | *optimal storage order* | – |
+| **G3** | Collect Resources | Perform | `#` / AND | – | – |
+| **G4** | Deliver Resources | Perform | `#` / AND | – | – |
+| **AT1** | Go to Storage | – | AND | *storage location* | 1 |
+| **AT2** | Request Resource | – | AND | *storage location* | 1 |
+| **AT3** | Wait for Resource | – | AND | *storage location* | 1 |
+| **AT4** | Check Battery Level | – | AND | *robot* | 1 |
+| **AT5** | Handle Low Battery During Collection | – | AND | *recharging station* | 1 |
+| **AT6** | Deliver to Destination | – | AND | *destination location* | 1 |
+| **AT7** | Check Battery Level During Delivery | – | AND | *robot* | 1 |
+| **AT8** | Return Resource to Checkpoint | – | AND | *checkpoint* | 1 |
+| **AT9** | Handle Low Battery During Delivery | – | AND | *checkpoint* | 1 |
+| **AT10** | Trigger Alert | – | AND | *robot* | 1 |
+| **AT11** | Send Report | – | AND | *robot* | 1 |
+
+---
+
+### 4. Logical Relationships (Parent → Children)
+
+```
+G1 -> G2, G3, G4 [AND][;]
+G2 -> (leaf) [AND][-]
+G3 -> AT1, AT2, AT3, AT4, AT5 [AND][#]
+G4 -> AT6, AT7, AT8, AT9, AT10, AT11 [AND][#]
+```
+
+*Each arrow indicates the decomposition of a parent node into its children, the relation type (AND/OR), and the runtime annotation for the parent node.*

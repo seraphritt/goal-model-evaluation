@@ -1,0 +1,90 @@
+**Goal Tables**
+
+| Name   | Text                               | Runtime              | Goal Type | Target Condition / Enquired Information                                                                      | Relation | Justification                                                                                                            | Ground truth I                                        | Ground truth C | Ground truth E |
+| ------ | ---------------------------------- | -------------------- | --------- | ------------------------------------------------------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------- | -------------- | -------------- |
+| G0     | Hospital Service Delivery          | #                    | Achieve   | All service goals (food delivery & dish retrieval) achieved                                                  | AND      | Both food delivery and dish retrieval can occur concurrently; parallel execution maximises efficiency.                   | Perform.                                              | Perform               |                |
+| G1     | Deliver Food to Inpatient Room     | ;                    | Achieve   | Food item is placed on the room table or retrieved by the patient, and the patient receives the correct meal | AND      | Must first obtain the order, then transport the food, and finally deliver it; these steps must be performed in sequence. | OK                                                    | Perform               |                |
+| G2     | Get Food Order                     | -                    | Perform   | –                                                                                                            | AND      | Single action of retrieving the order from the kitchen.                                                                  | OK                                                    | OK               |                |
+| G3     | Transport Food to Room             | -                    | Perform   | –                                                                                                            | AND      | Single action of moving the food from kitchen to the patient’s room.                                                     | OK                                                    | OK               |                |
+| G4     | Deliver Food                       | FALLBACK(G4.1, G4.2) | Perform   | –                                                                                                            | OR       | If table delivery is possible, use it; otherwise fall back to assisted retrieval.                                        | OK                                                    | OK               |                |
+| G4.1   | Deliver onto Table                 | -                    | Perform   | –                                                                                                            | AND      | Direct manipulation of the robot to place the meal on the table.                                                         | OK                                                    | OK               |                |
+| G4.2   | Assist Retrieval                   | ;                    | Perform   | –                                                                                                            | AND      | Must first know whether the patient can retrieve the meal, then cooperate with the patient or others.                    | OK                                                    | OK               |                |
+| G4.2.1 | Query Patient Retrieval Capability | -                    | Query     | “Can the patient retrieve the meal? Is a companion or nurse present?”                                        | AND      | The robot must obtain this information from the patient record and room occupancy.                                       | OK                                                    | OK               |                |
+| G4.2.2 | Cooperate to Retrieve              | ;                    | Perform   | –                                                                                                            | AND      | Door opening, patient interaction, meal indication, tracking, and error alert must follow one another.                   | OK                                                    | OK               |                |
+| G5     | Retrieve Dirty Dishes              | -                    | Perform   | –                                                                                                            | AND      | Single action of picking up dishes from the room.                                                                        | Achieve. Target condition: all dishes were retrieved. | OK               |                |
+
+
+**Task Tables**
+
+| Name | Text | Relation | Location | Number of Robots | Justification |
+|------|------|----------|----------|------------------|---------------|
+| AT1 | Retrieve the food order from the kitchen | AND | kitchen | 1 | The robot must be in the kitchen to obtain the order. |
+| AT2 | Transport the food from the kitchen to the inpatient room | AND | kitchen → room | 1 | One robot is sufficient to carry the meal to the room. |
+| AT3 | Manipulate the robot to place the meal on the room table | AND | inpatient room table | 1 | Requires the robot’s manipulation skill; single robot suffices. |
+| AT4 | Query the patient record for retrieval capability | AND | hospital system | 1 | The robot queries the record; no physical action required. |
+| AT5 | Request the patient to retrieve the meal | AND | inpatient room | 1 | Robot interacts with the patient to initiate retrieval. |
+| AT6 | Indicate which meal the patient should retrieve | AND | inpatient room | 1 | Robot provides visual/auditory cue to the patient. |
+| AT7 | Track when and where the meal is retrieved | AND | inpatient room | 1 | Robot monitors the retrieval event. |
+| AT8 | Alert if the wrong meal is retrieved | AND | hospital system | 1 | Robot reports discrepancy to staff. |
+| AT9 | Open the patient room door | AND | room door | 1 | Robot opens the door (may involve human or another robot). |
+| AT10 | Retrieve dirty dishes from the room | AND | inpatient room | [1,2] | Dish retrieval can be unassisted or assisted by a second robot; range allows flexibility. |
+
+**Summary Table (Goals & Tasks)**
+
+| ID | Type | Text | Runtime / Target / Enquired | Relation | Justification |
+|----|------|------|---------------------------|----------|---------------|
+| G0 | Goal (Achieve) | Hospital Service Delivery | #, target: all service goals achieved | AND | Parallel execution of food delivery and dish retrieval. |
+| G1 | Goal (Achieve) | Deliver Food to Inpatient Room | ;, target: food delivered & correct meal | AND | Sequential steps: order → transport → deliver. |
+| G2 | Goal (Perform) | Get Food Order | - | AND | Single action. |
+| G3 | Goal (Perform) | Transport Food to Room | - | AND | Single action. |
+| G4 | Goal (Perform) | Deliver Food | FALLBACK(G4.1,G4.2) | OR | Table delivery preferred; fallback to assistance. |
+| G4.1 | Goal (Perform) | Deliver onto Table | - | AND | Direct manipulation. |
+| G4.2 | Goal (Perform) | Assist Retrieval | ; | AND | Query → cooperate. |
+| G4.2.1 | Goal (Query) | Query Patient Retrieval Capability | - | AND | Need patient/nurse/companion info. |
+| G4.2.2 | Goal (Perform) | Cooperate to Retrieve | ; | AND | Door → retrieval tasks. |
+| G5 | Goal (Perform) | Retrieve Dirty Dishes | - | AND | Single action. |
+| AT1 | Task | Retrieve order | AND | kitchen | Robot must be in kitchen. |
+| AT2 | Task | Transport food | AND | kitchen→room | One robot suffices. |
+| AT3 | Task | Deliver onto table | AND | room table | Requires manipulation skill. |
+| AT4 | Task | Query record | AND | system | No physical action. |
+| AT5 | Task | Request patient | AND | room | Interaction needed. |
+| AT6 | Task | Indicate meal | AND | room | Cue to patient. |
+| AT7 | Task | Track retrieval | AND | room | Monitoring. |
+| AT8 | Task | Alert wrong meal | AND | system | Reporting. |
+| AT9 | Task | Open door | AND | door | Robot opens door. |
+| AT10 | Task | Retrieve dishes | AND | room | Unassisted or assisted; range [1,2]. |
+
+**Logical Relationships**
+
+- **G0 → G1, G5 [AND] [#]**  
+  *Justification*: Hospital Service Delivery requires both food delivery and dish retrieval; both can occur in parallel.
+
+- **G1 → G2, G3, G4 [AND] [;]**  
+  *Justification*: Must first get the order, then transport the food, then deliver it.
+
+- **G2 → AT1 [AND] [-]**  
+  *Justification*: Single action of retrieving the order.
+
+- **G3 → AT2 [AND] [-]**  
+  *Justification*: Single action of transporting the food.
+
+- **G4 → G4.1, G4.2 [OR] [FALLBACK(G4.1,G4.2)]**  
+  *Justification*: Prefer table delivery; fallback to assisted retrieval if table delivery fails.
+
+- **G4.1 → AT3 [AND] [-]**  
+  *Justification*: Single action of delivering onto the table.
+
+- **G4.2 → G4.2.1, G4.2.2 [AND] [;]**  
+  *Justification*: Must query capability before cooperating.
+
+- **G4.2.1 → AT4 [AND] [-]**  
+  *Justification*: Single query action.
+
+- **G4.2.2 → AT9, AT5, AT6, AT7, AT8 [AND] [;]**  
+  *Justification*: Door opening must precede patient interaction, meal indication, tracking, and error alert.
+
+- **G5 → AT10 [AND] [-]**  
+  *Justification*: Single action of retrieving dishes.
+
+- **AT10 → (optional) AT11 or AT12 if door opening required**  
+  *Justification*: If door cannot be opened autonomously, robot may request human or another robot. (Not explicitly modeled here but can be added similarly.)

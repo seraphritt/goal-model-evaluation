@@ -1,0 +1,90 @@
+## 1. Goal Model – Tables  
+
+| **Goal ID** | **Title**                           | **Text**                                                                                         | **Runtime**        | **Goal Type** | **Target / Enquired**                                                | **Relation to Children**                                                                                                                            | **Justification**                                                                                                                                                                         | **Ground truth I**                                   | **Ground truth C** | **Ground truth E** |
+| ----------- | ----------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------ | ------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------ | ------------------ |
+| G1          | Deliver Food to Patient Room        | Achieve delivery of food to the inpatient room following a kitchen request.                      | `;`                | Achieve       | *Food delivered to patient room and all subsequent tasks completed.* | AND (G2, G5)                                                                                                                                        | The robot must first know whether the patient can retrieve the meal from the tray (G2) before it can decide how to deliver. Both must succeed, so the children are executed sequentially. | OK                                                   |  Perform             |                    |
+| G2          | Query Patient Retrieval Capability  | Determine whether the patient, companion, or nurse can retrieve food from the robot’s tray.      | `-`                | Query         | *Boolean indicating retrieval capability*                            | –                                                                                                                                                   | A simple information-gathering step; no action is required beyond reading the record.                                                                                                     | OK                                                   |  Ok                  |                    |
+| G5          | Choose Delivery Method              | Decide whether to deliver food directly to the table or to the tray based on patient capability. | `FALLBACK(G4, G3)` | Perform       | –                                                                    | If tray delivery (G4) fails, the robot falls back to table delivery (G3). The fallback is binary, so the runtime annotation is a single `FALLBACK`. |                                                                                                                                                                                           | OK                                                   |  Ok                  |                    |
+| G3          | Deliver Food Directly to Table      | Deliver food to the patient room table using robot manipulation.                                 | `;`                | Perform       | –                                                                    | All sub-tasks must be performed in order; they are decomposed with a sequential `;`.                                                                |                                                                                                                                                                                           | OK                                                   |  Ok                  |                    |
+| G4          | Deliver Food to Tray & Await Pickup | Deliver food to the patient’s tray and wait for the patient to retrieve it.                      | `;`                | Perform       | –                                                                    | The entire sequence (pickup, navigation, door opening, hand-over, waiting, tracking, alert) must occur in order.                                    |                                                                                                                                                                                           | OK                                                   |  Ok                  |                    |
+| G6          | Retrieve Dirty Dishes               | Retrieve dirty dishes from patient room after meal consumption.                                  | `;`                | Perform       | –                                                                    | The dish-retrieval chain is sequential.                                                                                                             |                                                                                                                                                                                           | Achieve. Target condition: all dishes were retrieved |  Ok                  |                    |
+
+
+---
+
+### Task Nodes – Tables  
+
+| **Task ID** | **Title** | **Text** | **Relation to Parent** | **Location** | **Number of Robots** | **Justification** |
+|-------------|-----------|----------|------------------------|--------------|----------------------|-------------------|
+| AT1 | Pick Up Meal from Kitchen | Robot picks up the ordered meal from the kitchen. | AND | Kitchen | 1 | One robot is sufficient to lift the tray. |
+| AT2 | Navigate to Patient Room | Robot moves from kitchen to the patient room. | AND | Hospital corridor | 1 | Robot alone can navigate the corridor. |
+| AT3 | Open Room Door | Robot attempts to open the patient room door (may need human/robot help). | AND | Room door | 1 | Robot initiates door opening; cooperation may be required but the robot is the primary actor. |
+| AT4 | Deliver Meal to Table | Robot places the meal on the patient room table using specialized manipulation. | AND | Patient room table | 1 | Robot must perform the manipulation skill. |
+| AT5 | Hand Over Meal to Tray | Robot places the meal into the patient’s tray for later retrieval. | AND | Patient room tray | 1 | Robot places the tray in the correct location. |
+| AT6 | Wait for Patient to Pick Up Meal | Robot monitors the patient to ensure meal is retrieved from tray. | AND | Patient room | 1 | Robot observes the patient’s action. |
+| AT7 | Track Meal Retrieval | Robot logs the time and location of meal retrieval. | AND | Patient room | 1 | Robot keeps a record of the event. |
+| AT8 | Alert Wrong Meal Retrieval | Robot alerts if the patient retrieves the wrong meal. | AND | Patient room | 1 | Robot must notify the patient/nurse of a mismatch. |
+| AT9 | Retrieve Dirty Dishes | Robot picks up dirty dishes from the patient room table. | AND | Patient room table | [1,2] | Dish retrieval may be unassisted or assisted by a second robot. |
+| AT10 | Open Door for Dish Retrieval | Robot opens the room door for dish retrieval, possibly with another robot or human. | AND | Room door | [1,2] | Door opening may need cooperation. |
+| AT11 | Hand Over Dishes | Robot hands over dishes to the nurse or patient or places them back in the room for pickup. | AND | Patient room table | 1 | Robot completes the dish‑hand‑over step. |
+
+---
+
+## 2. Summary Table – All Goals & Tasks  
+
+| **ID** | **Type** | **Title** | **Runtime / Goal Type** | **Relation to Children** | **Justification** |
+|--------|----------|-----------|--------------------------|--------------------------|-------------------|
+| G1 | Goal | Deliver Food to Patient Room | `;` Achieve | AND (G2, G5) | Query first, then decide delivery method. |
+| G2 | Goal | Query Patient Retrieval Capability | `-` Query | – | Simple information retrieval. |
+| G5 | Goal | Choose Delivery Method | `FALLBACK(G4,G3)` Perform | OR (G4, G3) | Tray delivery preferred; fallback to table. |
+| G3 | Goal | Deliver Food Directly to Table | `;` Perform | AND (AT1,AT2,AT3,AT4) | All steps sequential. |
+| G4 | Goal | Deliver Food to Tray & Await Pickup | `;` Perform | AND (AT1,AT2,AT3,AT5,AT6,AT7,AT8) | Full tray‑delivery sequence. |
+| G6 | Goal | Retrieve Dirty Dishes | `;` Perform | AND (AT9,AT10,AT11) | Dish‑retrieval chain. |
+| AT1 | Task | Pick Up Meal from Kitchen | – | – | Single robot picks up meal. |
+| AT2 | Task | Navigate to Patient Room | – | – | Robot alone navigates. |
+| AT3 | Task | Open Room Door | – | – | Robot initiates door opening. |
+| AT4 | Task | Deliver Meal to Table | – | – | Robot manipulates table. |
+| AT5 | Task | Hand Over Meal to Tray | – | – | Robot places tray. |
+| AT6 | Task | Wait for Patient to Pick Up Meal | – | – | Robot monitors patient. |
+| AT7 | Task | Track Meal Retrieval | – | – | Robot logs event. |
+| AT8 | Task | Alert Wrong Meal Retrieval | – | – | Robot alerts mismatch. |
+| AT9 | Task | Retrieve Dirty Dishes | – | – | One or two robots may cooperate. |
+| AT10 | Task | Open Door for Dish Retrieval | – | – | Door opening may need help. |
+| AT11 | Task | Hand Over Dishes | – | – | Robot completes hand‑over. |
+
+---
+
+## 3. Logical Relationships – “Parent → Children” Notation  
+
+| **Parent** | **Children** | **Relation** | **Runtime** | **Justification** |
+|------------|--------------|--------------|-------------|-------------------|
+| G1 | G2, G5 | AND (sequential) | `;` | The robot must first know the patient’s ability (G2) before it can choose a delivery method (G5). |
+| G5 | G4, G3 | OR (fallback) | `FALLBACK(G4,G3)` | Tray delivery (G4) is attempted first; if it fails the robot falls back to table delivery (G3). |
+| G3 | AT1, AT2, AT3, AT4 | AND (sequential) | `;` | All steps must be performed in order to deliver to table. |
+| G4 | AT1, AT2, AT3, AT5, AT6, AT7, AT8 | AND (sequential) | `;` | Full tray‑delivery sequence must occur in order. |
+| G6 | AT9, AT10, AT11 | AND (sequential) | `;` | Dish retrieval chain is performed sequentially. |
+
+---
+
+### 4. Remarks & Design Rationale  
+
+1. **Sequential vs. Parallel** – All major sub‑tasks that build up a physical action (pickup, navigation, door opening, hand‑over, waiting, tracking) must happen in a well‑defined order. Therefore we use `;` for all goal runtimes that contain tasks. Parallel execution would risk collisions or inconsistent states (e.g., opening the door while still carrying a tray).  
+
+2. **Fallback** – The mission explicitly states that if the patient cannot retrieve the meal from the tray, the robot must place it on the table. This is naturally expressed as a binary fallback: try tray delivery (G4); if it fails, fall back to table delivery (G3).  
+
+3. **Query Goal** – The robot needs to know whether the patient can retrieve the meal from the tray. This is purely informational; no action is required beyond querying the patient record. Hence G2 is a leaf `Query` goal.  
+
+4. **Task Parameters** –  
+   * **Location** – Each task is annotated with the precise place where the action takes place (kitchen, corridor, door, table).  
+   * **Number of Robots** – Most tasks involve a single robot; dish‑retrieval and door‑opening tasks allow cooperation, so a range `[1,2]` is used.  
+
+5. **Goal Types** –  
+   * **Achieve** – G1 sets the overall world‑state goal (food delivered).  
+   * **Perform** – G3, G4, G6 represent sequences of actions that must be performed.  
+   * **Query** – G2 is an information‑gathering step.  
+
+6. **Uncertainty Handling** – The query result may be uncertain (patient record may be incomplete). The fallback mechanism ensures that even if the robot cannot confirm retrieval capability, it still delivers the meal safely.  
+
+7. **Extensibility** – Additional goals (e.g., “Notify Nurse of Dish Retrieval”) can be added as children of G6 with similar structure.  
+
+This goal model captures the mission’s intent, clarifies the decision flow, and lays out a clear set of actionable tasks for the robots involved.
