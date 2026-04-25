@@ -4,6 +4,7 @@
 
 ## 1. Goal Table
 
+
 | Name         | Text                                        | Runtime                       | Goal Type | Target Condition / Enquired Information | Relation                       | Justification                                                                                   | Ground truth I                                       | Ground truth C | Ground truth E |
 | ------------ | ------------------------------------------- | ----------------------------- | --------- | --------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------- | -------------- | -------------- |
 | **G1**       | Deliver food from kitchen to inpatient room | `;`                           | Perform   | –                                       | –                              | Delivery is an *action* that must be carried out; it is the top-level goal.                     | OK                                                   | Ok               |                |
@@ -23,6 +24,7 @@
 | **G4.1**     | Unassisted dish retrieval                   | `-`                           | Perform   | –                                       | OR (with G4.2 & G4.3)          | Robot may be able to pick up dishes alone.                                                      | OK                                                   | Ok               |                |
 | **G4.2**     | Robot + robot dish retrieval                | `-`                           | Perform   | –                                       | OR (with G4.1 & G4.3)          | Cooperation may be needed if the robot alone cannot handle the load.                            | OK                                                   | Ok               |                |
 | **G4.3**     | Robot + human dish retrieval                | `-`                           | Perform   | –                                       | OR (with G4.1 & G4.2)          | Human assistance may be required for heavy or awkward dishes.                                   | OK                                                   | Ok               |                |
+
 
 
 ---

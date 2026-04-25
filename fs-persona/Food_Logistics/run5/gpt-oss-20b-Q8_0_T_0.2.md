@@ -1,5 +1,6 @@
 **Goal Model – Multi‑Robot Food Delivery**
 
+
 | **Name**                                 | **Text**                                                                                                       | **Runtime**                    | **Goal Type** | **Enquired Information / Target Condition**       | **Relation** | **Ground truth I**                                    | **Ground truth C** | **Ground truth E** |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------ | ------------- | ------------------------------------------------- | ------------ | ----------------------------------------------------- | ------------------ | ------------------ |
 | **G1 – Deliver Food to Inpatient Room**  | Deliver a meal from the kitchen to a specified inpatient room, handling all required interactions.             | (G2; G3; G7; FALLBACK(G5, G4)) | Perform       | –                                                 | –            | Achieve. Target condition: all food was delivered.    |   Ok                 |                    |

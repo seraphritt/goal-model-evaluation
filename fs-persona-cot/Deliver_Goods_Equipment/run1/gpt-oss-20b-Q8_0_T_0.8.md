@@ -12,6 +12,7 @@
 | **G4: Failure Handling**         | Handle failure to return the resource to a checkpoint.                            | `;`                   | Perform   | –              | AND      | Both alert and report must be performed.                                    | OK                                                        | Ok             |                |
 
 
+
 ---
 
 ### Task Model

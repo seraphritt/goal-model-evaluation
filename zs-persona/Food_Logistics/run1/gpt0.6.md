@@ -15,6 +15,7 @@
 | **G11 – Retrieve Dirty Dishes**                       | Pick up dirty dishes from the patient’s room after the meal.                                                                 | `-`               | Perform   | –                                                                                   | AND      | Achieve. Target condition: all dirty dishes were retrieved. | OK               |                |
 
 
+
 **Task Table**
 
 | Name | Text | Relation | Location | Number of Robots |
