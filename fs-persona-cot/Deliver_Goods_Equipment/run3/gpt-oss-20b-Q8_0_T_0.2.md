@@ -1,0 +1,117 @@
+## 1. Goal Model – Tables
+
+| **Name**                                        | **Text**                                                                           | **Runtime**            | **Goal Type** | **Target Cond./Enq. Info** | **Relation**  | **Justification**                                                                     | **Ground truth I**                                      | **Ground truth C** | **Ground truth E** |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------- | ------------- | -------------------------- | ------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------ | ------------------ |
+| **G1: Deliver Resources**                       | Deliver the requested resources to the requesting agent at the specified location. | `;`                    | Perform       | –                          | AND           | The mission is a sequence: first collect, then deliver.                               | OK                                                      | Ok                   |                    |
+| **G2: Assign Tasks**                            | Decide whether to use parallel or sequential collect-deliver assignments.          | `FALLBACK(G2.1, G2.2)` | Perform       | –                          | OR (fallback) | If multiple items are needed, parallel assignment is preferred; otherwise sequential. | OK                                                      | Ok                   |                    |
+| **G3: Execute Collection Phase**                | Carry out the collection of resources from storage.                                | `FALLBACK(G3.1, G3.2)` | Perform       | –                          | OR (fallback) | Normal collection is attempted; if battery drops to 10 % a fallback is triggered.     | Achieve. Target condition: all resources were collected | Ok                   |                    |
+| **G4: Execute Delivery Phase**                  | Carry out the delivery of collected resources to the destination.                  | `FALLBACK(G4.1, G4.2)` | Perform       | –                          | OR (fallback) | Normal delivery is attempted; if battery drops to 30 % a fallback is triggered.       | Achieve. Target condition: all resources were delivered | Ok                   |                    |
+| **G5: Parallel Assignment**                     | Assign multiple robots to parallel collect-deliver tasks.                          | `-`                    | Perform       | –                          | –             | Parallelism reduces overall mission time when several items are needed.               | OK                                                      | Ok                   |                    |
+| **G6: Sequential Assignment**                   | Assign a single robot to perform the collect-deliver task sequentially.            | `-`                    | Perform       | –                          | –             | Used when only one item or one robot is available.                                    | OK                                                      | Ok                   |                    |
+| **G7: Plan Optimal Route**                      | Compute the route that minimizes waiting time + travel distance.                   | `-`                    | Perform       | –                          | –             | Needed before navigation to ensure efficient travel.                                  | OK                                                      | Ok                   |                    |
+| **G8: Navigate to Storage**                     | Move the robot to the storage location where the resource is stored.               | `-`                    | Perform       | –                          | –             | Physical movement is required to reach the resource.                                  | OK                                                      | Ok                   |                    |
+| **G9: Request Resources**                       | Send a message to the storage specifying the requested resources.                  | `-`                    | Perform       | –                          | –             | The storage must be informed before it can hand over the items.                       | Query. Enqueried information: resources to be collected | Ok                   |                    |
+| **G10: Wait for Retrieval**                     | Wait until the storage confirms that the resources have been retrieved.            | `-`                    | Perform       | –                          | –             | The robot must not proceed until the items are ready.                                 | OKs                                                     | Ok                   |                    |
+| **G11: Return to Charging Station**             | Return to the charging station when battery < 10 % during collection.              | `-`                    | Perform       | –                          | –             | Battery safety requires recharging before continuing.                                 | OK                                                      | Ok                   |                    |
+| **G12: Assign Mission to Another Robot**        | Transfer the remaining collection task to another robot.                           | `-`                    | Perform       | –                          | –             | Ensures continuity of the mission when the current robot cannot finish.               | OK                                                      | Ok                   |                    |
+| **G13: Transport Resources to Destination**     | Move the collected resources to the specified delivery location.                   | `-`                    | Perform       | –                          | –             | The core delivery action.                                                             | OK                                                      | Ok                   |                    |
+| **G14: Return Resource to Checkpoint**          | Return the resource to a checkpoint when battery < 30 % during delivery.           | `-`                    | Perform       | –                          | –             | Allows another robot to pick up the resource safely.                                  | OK                                                      | Ok                   |                    |
+| **G15: Assign Remaining Task to Another Robot** | Transfer the remaining delivery runs to another robot.                             | `-`                    | Perform       | –                          | –             | Maintains delivery progress after a low-battery event.                                | OK                                                      | Ok                   |                    |
+| **G16: Trigger Alert**                          | Trigger an alert if the robot fails to return the resource to a checkpoint.        | `-`                    | Perform       | –                          | –             | Safety protocol for lost resources.                                                   | OK                                                      | Ok                   |                    |
+| **G17: Send Report to Sector Manager**          | Send a detailed report of the failure to the sector manager.                       | `-`                    | Perform       | –                          | –             | Accountability and incident logging.                                                  | OK                                                      | Ok                   |                    |
+
+
+---
+
+## 2. Task Model – Tables
+
+| **Name** | **Text** | **Relation** | **Location** | **Number of Robots** | **Justification** |
+|----------|----------|--------------|--------------|----------------------|-------------------|
+| **AT1: Plan Route** | Compute the optimal route to the storage. | AND | robot (current location) | 1 | Only the robot that will navigate needs to plan. |
+| **AT2: Navigate to Storage** | Move the robot to the storage location. | AND | storage | 1 | Single robot performs the movement. |
+| **AT3: Send Request Message** | Send a request to the storage for the specified resources. | AND | storage | 1 | The robot at the storage must send the message. |
+| **AT4: Wait for Retrieval** | Wait until the storage confirms resource retrieval. | AND | storage | 1 | The robot must stay until the items are ready. |
+| **AT5: Return to Charging Station** | Move the robot back to the charging station. | AND | charging station | 1 | Only the robot with low battery returns. |
+| **AT6: Assign Mission to Another Robot** | Notify another robot to take over the remaining task. | AND | central control | 1 | The robot that is handing over the task must inform the controller. |
+| **AT7: Transport Resources to Destination** | Move the resources from storage to the delivery location. | AND | destination | 1 | The robot carrying the items performs the transport. |
+| **AT8: Return Resource to Checkpoint** | Return the resource to a checkpoint when battery is low. | AND | checkpoint | 1 | The robot with low battery must bring the items to a safe spot. |
+| **AT9: Assign Remaining Task to Another Robot** | Notify another robot to continue delivery runs. | AND | central control | 1 | The robot that is handing over the task must inform the controller. |
+| **AT10: Trigger Alert** | Trigger an alert signal to the sector manager. | AND | sector manager | 1 | The robot that fails to return the resource must alert. |
+| **AT11: Send Report to Sector Manager** | Send a detailed failure report to the sector manager. | AND | sector manager | 1 | The robot that failed must report the incident. |
+| **AT12: Assign Parallel Collect‑Deliver Tasks** | Distribute collect‑deliver tasks among multiple robots. | AND | central control | [2,∞] | Parallelism requires at least two robots. |
+| **AT13: Assign Sequential Collect‑Deliver Tasks** | Assign the collect‑deliver task to a single robot. | AND | central control | 1 | Used when only one robot is available. |
+
+---
+
+## 3. Summary Table (Goals + Tasks)
+
+| **ID** | **Type** | **Title** | **Runtime / Relation** | **Location / Robots** |
+|--------|----------|-----------|------------------------|-----------------------|
+| G1 | Goal | Deliver Resources | `;` (AND) | – |
+| G2 | Goal | Assign Tasks | `FALLBACK(G2.1,G2.2)` (OR) | – |
+| G3 | Goal | Execute Collection Phase | `FALLBACK(G3.1,G3.2)` (OR) | – |
+| G4 | Goal | Execute Delivery Phase | `FALLBACK(G4.1,G4.2)` (OR) | – |
+| G5 | Goal | Parallel Assignment | `-` | – |
+| G6 | Goal | Sequential Assignment | `-` | – |
+| G7 | Goal | Plan Optimal Route | `-` | – |
+| G8 | Goal | Navigate to Storage | `-` | – |
+| G9 | Goal | Request Resources | `-` | – |
+| G10 | Goal | Wait for Retrieval | `-` | – |
+| G11 | Goal | Return to Charging Station | `-` | – |
+| G12 | Goal | Assign Mission to Another Robot | `-` | – |
+| G13 | Goal | Transport Resources to Destination | `-` | – |
+| G14 | Goal | Return Resource to Checkpoint | `-` | – |
+| G15 | Goal | Assign Remaining Task to Another Robot | `-` | – |
+| G16 | Goal | Trigger Alert | `-` | – |
+| G17 | Goal | Send Report to Sector Manager | `-` | – |
+| AT1 | Task | Plan Route | AND | robot (1) |
+| AT2 | Task | Navigate to Storage | AND | storage (1) |
+| AT3 | Task | Send Request Message | AND | storage (1) |
+| AT4 | Task | Wait for Retrieval | AND | storage (1) |
+| AT5 | Task | Return to Charging Station | AND | charging station (1) |
+| AT6 | Task | Assign Mission to Another Robot | AND | central control (1) |
+| AT7 | Task | Transport Resources to Destination | AND | destination (1) |
+| AT8 | Task | Return Resource to Checkpoint | AND | checkpoint (1) |
+| AT9 | Task | Assign Remaining Task to Another Robot | AND | central control (1) |
+| AT10 | Task | Trigger Alert | AND | sector manager (1) |
+| AT11 | Task | Send Report to Sector Manager | AND | sector manager (1) |
+| AT12 | Task | Assign Parallel Collect‑Deliver Tasks | AND | central control ([2,∞]) |
+| AT13 | Task | Assign Sequential Collect‑Deliver Tasks | AND | central control (1) |
+
+---
+
+## 4. Logical Relationships
+
+| **Parent → Children** | **Relation** | **Runtime** | **Justification** |
+|------------------------|--------------|-------------|-------------------|
+| **G1 → G2, G3, G4** | AND | `;` | Collection, delivery, and task assignment must all succeed in order. |
+| **G2 → G5, G6** | OR (fallback) | `FALLBACK(G2.1,G2.2)` | Prefer parallel assignment when multiple items; otherwise sequential. |
+| **G3 → G7, G8, G9, G10** | AND | `;` | Collection requires planning, navigation, request, and waiting in order. |
+| **G3 → G11, G12** | AND | `;` | If battery low, robot must recharge and hand over task. |
+| **G4 → G13** | AND | `;` | Delivery requires transporting resources. |
+| **G4 → G14, G15, G16, G17** | AND | `;` | If battery low, return to checkpoint, hand over, alert, and report. |
+| **G5 → AT12** | AND | `-` | Parallel assignment is executed by AT12. |
+| **G6 → AT13** | AND | `-` | Sequential assignment is executed by AT13. |
+| **G7 → AT1** | AND | `-` | Route planning is performed by AT1. |
+| **G8 → AT2** | AND | `-` | Navigation is performed by AT2. |
+| **G9 → AT3** | AND | `-` | Request is performed by AT3. |
+| **G10 → AT4** | AND | `-` | Waiting is performed by AT4. |
+| **G11 → AT5** | AND | `-` | Return to charging is performed by AT5. |
+| **G12 → AT6** | AND | `-` | Assignment to another robot is performed by AT6. |
+| **G13 → AT7** | AND | `-` | Transport is performed by AT7. |
+| **G14 → AT8** | AND | `-` | Return to checkpoint is performed by AT8. |
+| **G15 → AT9** | AND | `-` | Assignment to another robot is performed by AT9. |
+| **G16 → AT10** | AND | `-` | Alert is performed by AT10. |
+| **G17 → AT11** | AND | `-` | Report is performed by AT11. |
+
+---
+
+### Why this structure?
+
+* **Sequential vs. Parallel** – The mission naturally splits into a collection phase followed by a delivery phase; thus the top‑level goal uses sequential execution (`;`).  
+* **Fallbacks** – Battery constraints are hard safety limits. If a robot’s battery drops below the threshold, the mission must immediately switch to a recovery sub‑goal (recharge or checkpoint). This is captured by `FALLBACK`.  
+* **Parallel Assignment** – When multiple items are requested, the mission can be sped up by assigning several robots simultaneously. This is represented by an OR (fallback) between parallel and sequential assignment.  
+* **AND Decompositions** – Within each sub‑goal, all constituent actions must be performed (e.g., planning, navigation, request, wait). Hence AND.  
+* **Task Locations & Robot Numbers** – Each task is tied to a concrete location (storage, charging station, checkpoint, etc.) and the number of robots required reflects the mission’s operational reality (single robot for most actions, multiple robots for parallel assignment).  
+
+This goal model faithfully captures the mission’s operational logic, safety constraints, and parallelism opportunities while providing a clear, executable structure for a multi‑robot system.

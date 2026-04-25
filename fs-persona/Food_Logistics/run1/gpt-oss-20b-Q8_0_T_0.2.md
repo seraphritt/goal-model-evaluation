@@ -1,0 +1,150 @@
+## Goal Model – Multi‑Robot Food Delivery & Dish Retrieval
+
+Below is a fully‑annotated goal model that decomposes the mission into goals and tasks, following the specifications given.
+
+---
+
+### 1. Goal Table
+
+| **Name**     | **Text**                           | **Runtime**                                                        | **Goal Type** | **Enquired Information / Target Condition**              | **Relation** | **Ground truth I** | **Ground truth C** | **Ground truth E** |
+| ------------ | ---------------------------------- | ------------------------------------------------------------------ | ------------- | -------------------------------------------------------- | ------------ | ------------------ | ------------------ | ------------------ |
+| **G1**       | Achieve Food Delivery              | `;`                                                                | Achieve       | `all ordered meals delivered to correct inpatient rooms` | –            |   OK                 | Perform                   |                    |
+| **G1.1**     | Query Order                        | `-`                                                                | Query         | `Order details`                                          | AND          |   OK                 | OK                   |                    |
+| **G1.2**     | Perform Route Planning             | `-`                                                                | Perform       | –                                                        | AND          |   OK                 | OK                   |                    |
+| **G1.3**     | Perform Delivery                   | `;`                                                                | Perform       | –                                                        | AND          |   OK                 | Achieve                   |                    |
+| **G1.3.1**   | Query Patient Retrieval Capability | `-`                                                                | Query         | `Patient’s ability to fetch tray`                        | AND          |   OK                 | OK                   |                    |
+| **G1.3.2**   | Select Delivery Method             | `FALLBACK(G1.3.2.1,FALLBACK(G1.3.2.2,FALLBACK(G1.3.2.3,G1.3.2.4))` | Perform       | –                                                        | OR           |   OK                 | OK                   |                    |
+| **G1.3.2.1** | Deliver to Table                   | `-`                                                                | Perform       | –                                                        | AND          |   OK                 | OK                   |                    |
+| **G1.3.2.2** | Handover to Patient                | `-`                                                                | Perform       | –                                                        | AND          |   OK                 | OK                   |                    |
+| **G1.3.2.3** | Handover to Companion              | `-`                                                                | Perform       | –                                                        | AND          |   OK                 | OK                   |                    |
+| **G1.3.2.4** | Handover to Robot                  | `-`                                                                | Perform       | –                                                        | AND          |   OK                 | OK                   |                    |
+| **G1.4**     | Track Meal Retrieval               | `-`                                                                | Perform       | –                                                        | AND          |   OK                 | OK                   |                    |
+| **G1.5**     | Alert Wrong Meal Retrieval         | `-`                                                                | Perform       | –                                                        | AND          |   OK                 | OK                   |                    |
+| **G2**       | Achieve Dish Retrieval             | `;`                                                                | Achieve       | `all dirty dishes removed from inpatient rooms`          | –            |   OK                 | Perform                   |                    |
+| **G2.1**     | Query Dirty Dishes                 | `;`                                                                | Query         | `Dirty dishes present`                                   | AND          |   OK                 | OK                   |                    |
+| **G2.2**     | Plan Dish Retrieval Route          | `-`                                                                | Perform       | –                                                        | AND          |   OK                 | OK                   |                    |
+| **G2.3**     | Perform Dish Retrieval             | `FALLBACK(G2.3.1,FALLBACK(G2.3.2,G2.3.3))`                         | Perform       | –                                                        | OR           |   OK                 | Achieve                   |                    |
+| **G2.3.1**   | Unassisted Retrieval               | `;`                                                                | Perform       | –                                                        | AND          |   OK                 | OK                   |                    |
+| **G2.3.2**   | Robot Cooperation Retrieval        | `;`                                                                | Perform       | –                                                        | AND          |   OK                 | OK                   |                    |
+| **G2.3.3**   | Human Cooperation Retrieval        | `;`                                                                | Perform       | –                                                        | AND          |   OK                 | OK                   |                    |
+
+
+---
+
+### 2. Task Table
+
+| **Name** | **Text** | **Relation** | **Location** | **Number of Robots** |
+|----------|----------|--------------|--------------|----------------------|
+| **AT1** | Receive Order from Kitchen | AND | Kitchen | 1 |
+| **AT2** | Plan Food Delivery Route | AND | Hospital | 1 |
+| **AT3** | Deliver Food to Table | AND | Inpatient Room Table | 1 |
+| **AT4** | Query Patient Retrieval Capability | AND | Hospital Records | 1 |
+| **AT5** | Hand Over Food to Patient | AND | Inpatient Room | 1 |
+| **AT6** | Hand Over Food to Companion | AND | Inpatient Room | 1 |
+| **AT7** | Hand Over Food to Robot | AND | Inpatient Room | 2 |
+| **AT8** | Monitor Meal Retrieval | AND | Inpatient Room | 1 |
+| **AT9** | Alert Wrong Meal Retrieval | AND | Inpatient Room | 1 |
+| **AT10** | Open Door with Robot | AND | Room Door | 1 |
+| **AT11** | Open Door with Human | AND | Room Door | 1 |
+| **AT12** | Wait for Patient Call | AND | Inpatient Room | 1 |
+| **AT13** | Respond to Call | AND | Inpatient Room | 1 |
+| **AT14** | Pick up Dish | AND | Inpatient Room | 1 |
+| **AT15** | Transport Dish to Laundry | AND | Inpatient Room → Laundry | 1 |
+| **AT16** | Deposit Dish in Laundry | AND | Laundry | 1 |
+| **AT17** | Coordinate with Human | AND | Inpatient Room | 1 |
+| **AT18** | Coordinate with Robot | AND | Inpatient Room | 2 |
+| **AT19** | Joint Retrieval of Dish | AND | Inpatient Room | 2 |
+| **AT20** | Request Human to Open Door | AND | Room Door | 1 |
+| **AT21** | Log Retrieval Time and Location | AND | Inpatient Room | 1 |
+| **AT22** | Identify Dish | AND | Inpatient Room | 1 |
+| **AT23** | Check Dish Cleanliness | AND | Inpatient Room | 1 |
+| **AT24** | Confirm Dish is Dirty | AND | Inpatient Room | 1 |
+| **AT25** | Wait for Human to Open Door | AND | Room Door | 1 |
+| **AT26** | Wait for Robot to Open Door | AND | Room Door | 1 |
+| **AT27** | Plan Dish Retrieval Route | AND | Hospital | 1 |
+| **AT28** | Query Dirty Dishes | AND | Hospital Records | 1 |
+
+---
+
+### 3. Summary Table (Goals + Tasks)
+
+| **ID** | **Title** | **Type** | **Description** | **Runtime / Relation** | **Location / Robots** |
+|--------|-----------|----------|-----------------|------------------------|-----------------------|
+| G1 | Achieve Food Delivery | Goal | All ordered meals delivered to correct inpatient rooms | `;` (sequential) | – |
+| G1.1 | Query Order | Goal | Retrieve order details | `-` | – |
+| G1.2 | Perform Route Planning | Goal | Plan delivery route | `-` | – |
+| G1.3 | Perform Delivery | Goal | Execute delivery operation | `;` | – |
+| G1.3.1 | Query Patient Retrieval Capability | Goal | Check if patient can fetch tray | `-` | – |
+| G1.3.2 | Select Delivery Method | Goal | Choose delivery method | `FALLBACK(...)` | – |
+| G1.3.2.1 | Deliver to Table | Goal | Deliver meal onto table | `-` | – |
+| G1.3.2.2 | Handover to Patient | Goal | Hand over meal to patient | `-` | – |
+| G1.3.2.3 | Handover to Companion | Goal | Hand over meal to companion | `-` | – |
+| G1.3.2.4 | Handover to Robot | Goal | Hand over meal to another robot | `-` | – |
+| G1.4 | Track Meal Retrieval | Goal | Monitor meal retrieval | `-` | – |
+| G1.5 | Alert Wrong Meal Retrieval | Goal | Alert if wrong meal retrieved | `-` | – |
+| G2 | Achieve Dish Retrieval | Goal | Remove all dirty dishes | `;` | – |
+| G2.1 | Query Dirty Dishes | Goal | Identify dirty dishes | `;` | – |
+| G2.2 | Plan Dish Retrieval Route | Goal | Plan route to dishes | `-` | – |
+| G2.3 | Perform Dish Retrieval | Goal | Execute dish retrieval | `FALLBACK(...)` | – |
+| G2.3.1 | Unassisted Retrieval | Goal | Retrieve without assistance | `;` | – |
+| G2.3.2 | Robot Cooperation Retrieval | Goal | Retrieve with robot cooperation | `;` | – |
+| G2.3.3 | Human Cooperation Retrieval | Goal | Retrieve with human cooperation | `;` | – |
+| AT1 | Receive Order from Kitchen | Task | Receive order | AND | Kitchen – 1 robot |
+| AT2 | Plan Food Delivery Route | Task | Plan route | AND | Hospital – 1 robot |
+| AT3 | Deliver Food to Table | Task | Deliver to table | AND | Inpatient Room Table – 1 robot |
+| AT4 | Query Patient Retrieval Capability | Task | Query patient capability | AND | Hospital Records – 1 robot |
+| AT5 | Hand Over Food to Patient | Task | Hand over to patient | AND | Inpatient Room – 1 robot |
+| AT6 | Hand Over Food to Companion | Task | Hand over to companion | AND | Inpatient Room – 1 robot |
+| AT7 | Hand Over Food to Robot | Task | Hand over to robot | AND | Inpatient Room – 2 robots |
+| AT8 | Monitor Meal Retrieval | Task | Monitor retrieval | AND | Inpatient Room – 1 robot |
+| AT9 | Alert Wrong Meal Retrieval | Task | Alert wrong meal | AND | Inpatient Room – 1 robot |
+| AT10 | Open Door with Robot | Task | Robot opens door | AND | Room Door – 1 robot |
+| AT11 | Open Door with Human | Task | Human opens door | AND | Room Door – 1 robot |
+| AT12 | Wait for Patient Call | Task | Wait for call | AND | Inpatient Room – 1 robot |
+| AT13 | Respond to Call | Task | Respond | AND | Inpatient Room – 1 robot |
+| AT14 | Pick up Dish | Task | Pick up dish | AND | Inpatient Room – 1 robot |
+| AT15 | Transport Dish to Laundry | Task | Transport dish | AND | Inpatient Room → Laundry – 1 robot |
+| AT16 | Deposit Dish in Laundry | Task | Deposit dish | AND | Laundry – 1 robot |
+| AT17 | Coordinate with Human | Task | Coordinate | AND | Inpatient Room – 1 robot |
+| AT18 | Coordinate with Robot | Task | Coordinate | AND | Inpatient Room – 2 robots |
+| AT19 | Joint Retrieval of Dish | Task | Joint retrieval | AND | Inpatient Room – 2 robots |
+| AT20 | Request Human to Open Door | Task | Request door opening | AND | Room Door – 1 robot |
+| AT21 | Log Retrieval Time and Location | Task | Log data | AND | Inpatient Room – 1 robot |
+| AT22 | Identify Dish | Task | Identify dish | AND | Inpatient Room – 1 robot |
+| AT23 | Check Dish Cleanliness | Task | Check cleanliness | AND | Inpatient Room – 1 robot |
+| AT24 | Confirm Dish is Dirty | Task | Confirm dirtiness | AND | Inpatient Room – 1 robot |
+| AT25 | Wait for Human to Open Door | Task | Wait for door | AND | Room Door – 1 robot |
+| AT26 | Wait for Robot to Open Door | Task | Wait for robot | AND | Room Door – 1 robot |
+| AT27 | Plan Dish Retrieval Route | Task | Plan route | AND | Hospital – 1 robot |
+| AT28 | Query Dirty Dishes | Task | Query dishes | AND | Hospital Records – 1 robot |
+
+---
+
+### 4. Logical Relationships
+
+| **Parent** | **Children** | **Relation** | **Runtime Annotation** |
+|------------|--------------|--------------|------------------------|
+| **G1** | G1.1, G1.2, G1.3, G1.4, G1.5 | AND | `;` (sequential) |
+| **G1.3** | G1.3.1, G1.3.2 | AND | `;` (sequential) |
+| **G1.3.2** | G1.3.2.1, G1.3.2.2, G1.3.2.3, G1.3.2.4 | OR | `FALLBACK(G1.3.2.1,FALLBACK(G1.3.2.2,FALLBACK(G1.3.2.3,G1.3.2.4))` |
+| **G2** | G2.1, G2.2, G2.3 | AND | `;` (sequential) |
+| **G2.3** | G2.3.1, G2.3.2, G2.3.3 | OR | `FALLBACK(G2.3.1,FALLBACK(G2.3.2,G2.3.3))` |
+| **G2.1** | AT22, AT23, AT24 | AND | `;` (sequential) |
+| **G2.3.1** | AT14, AT15, AT16 | AND | `;` (sequential) |
+| **G2.3.2** | AT18, AT19, AT14, AT15, AT16 | AND | `;` (sequential) |
+| **G2.3.3** | AT17, AT20, AT25, AT14, AT15, AT16 | AND | `;` (sequential) |
+| **G1.1** | AT1 | AND | – |
+| **G1.2** | AT2 | AND | – |
+| **G1.3.1** | AT4 | AND | – |
+| **G1.3.2.1** | AT3 | AND | – |
+| **G1.3.2.2** | AT5 | AND | – |
+| **G1.3.2.3** | AT6 | AND | – |
+| **G1.3.2.4** | AT7 | AND | – |
+| **G1.4** | AT8 | AND | – |
+| **G1.5** | AT9 | AND | – |
+| **G2.2** | AT27 | AND | – |
+| **G2.1** | AT28 | AND | – |
+
+---
+
+**End of model**

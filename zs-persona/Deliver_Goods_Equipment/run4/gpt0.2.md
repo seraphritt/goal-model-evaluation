@@ -1,0 +1,124 @@
+**Goal Model – Multi‑Robot Resource Delivery Mission**
+
+| **Name**                                            | **Text**                                                                                        | **Runtime** | **Goal Type** | **Target Condition / Enquired Info** | **Relation** | **Ground truth I** | **Ground truth C** | **Ground truth E** |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------- | ------------- | ------------------------------------ | ------------ | ------------------ | ------------------ | ------------------ |
+| **G1 – Complete Resource Delivery Mission**         | Deliver the requested resources from storage to the requesting agent at the specified location. | [;]         | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+| **G2 – Collect Resources**                          | Gather all required items from the designated storage locations.                                | [;]         | Perform       | –                                    | AND          | Achieve. Target condition: all resoureces were collected.                   | OK                   |                    |
+| **G3 – Deliver Resources**                          | Transport the collected items to the destination location.                                      | [;]         | Perform       | –                                    | AND          |  Achieve. Target condition: all resoureces were delivered.                  |  OK                  |                    |
+| **G2.1 – Plan Collection Route**                    | Determine the optimal order of visiting storages based on waiting-time and path length.         | [#]         | Perform       | –                                    | AND          |  OK                  | OK                   |                    |
+| **G2.1.1 – Estimate Waiting Time**                  | Compute the expected waiting time at each storage.                                              | –           | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+| **G2.1.2 – Estimate Path Length**                   | Compute the travel distance between storages and the robot.                                     | –           | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+| **G2.2 – Request Resources**                        | Ask the storage to release the required items.                                                  | [;]         | Perform       | –                                    | AND          | Query. Enquired Information: resources to be collected.                   |  OK                  |                    |
+| **G2.2.1 – Send Request Message**                   | Transmit the precise resource specification to the storage.                                     | –           | Perform       | –                                    | AND          |  OK                  | OK                   |                    |
+| **G2.2.2 – Wait for Retrieval Confirmation**        | Pause until the storage confirms that the items have been retrieved.                            | –           | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+| **G2.3 – Monitor Battery & Reassign**               | Keep track of the robot’s battery and re-allocate the mission if necessary.                     | [;]         | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+| **G2.3.1 – Check Battery Level**                    | Measure the current battery percentage.                                                         | –           | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+| **G2.3.2 – Return to Recharge Station**             | Go to the charging point when battery < 10 %.                                                   | –           | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+| **G2.3.3 – Assign Mission to Another Robot**        | Transfer the remaining collection task to a spare robot.                                        | –           | Perform       | –                                    | AND          | OK                   |  OK                  |                    |
+| **G3.1 – Transport Resources**                      | Move the items from the robot to the destination.                                               | [;]         | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+| **G3.1.1 – Make Runs to Destination**               | Perform the necessary trips to deliver all items.                                               | [;]         | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+| **G3.1.1.1 – Navigate to Destination**              | Drive the robot to the target location.                                                         | –           | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+| **G3.1.1.2 – Carry Resources**                      | Physically hold and move the items during the trip.                                             | –           | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+| **G3.2 – Monitor Battery & Reassign**               | Keep track of the robot’s battery during delivery and re-allocate if needed.                    | [;]         | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+| **G3.2.1 – Check Battery Level**                    | Measure the current battery percentage.                                                         | –           | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+| **G3.2.2 – Return to Checkpoint**                   | Go to a safe checkpoint when battery < 30 %.                                                    | –           | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+| **G3.2.3 – Assign Remaining Task to Another Robot** | Transfer the unfinished delivery to another robot.                                              | –           | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+| **G3.3 – Failure Handling**                         | Manage the situation when a robot cannot return to a checkpoint.                                | [;]         | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+| **G3.3.1 – Trigger Alert & Report**                 | Send an alert and report to the sector manager.                                                 | –           | Perform       | –                                    | AND          | OK                   | OK                   |                    |
+
+
+---
+
+### Task Model
+
+| **Name** | **Text** | **Relation** | **Location** | **Number of Robots** |
+|----------|----------|--------------|--------------|----------------------|
+| **AT1 – Query Storage Waiting Time** | Ask the storage system for the expected waiting time before items can be retrieved. | AND | Storage | 1 |
+| **AT2 – Compute Path Length** | Calculate the travel distance from the robot to the storage. | AND | Robot | 1 |
+| **AT3 – Send Resource Request Message** | Transmit the resource specification to the storage. | AND | Robot | 1 |
+| **AT4 – Wait for Retrieval Confirmation** | Block until the storage confirms that the items are ready. | AND | Robot | 1 |
+| **AT5 – Check Battery Level (Collection)** | Measure the robot’s battery during collection. | AND | Robot | 1 |
+| **AT6 – Return to Recharge Station** | Drive the robot to the charging station when battery < 10 %. | AND | Recharge Station | 1 |
+| **AT7 – Assign Mission to Another Robot (Collection)** | Notify a spare robot to take over the remaining collection task. | AND | Robot | 1 |
+| **AT8 – Navigate to Destination** | Drive the robot to the delivery destination. | AND | Destination | 1 |
+| **AT9 – Carry Resources** | Physically hold and move the items during the trip. | AND | Robot | 1 |
+| **AT10 – Check Battery Level (Delivery)** | Measure the robot’s battery during delivery. | AND | Robot | 1 |
+| **AT11 – Return to Checkpoint** | Drive the robot to a checkpoint when battery < 30 %. | AND | Checkpoint | 1 |
+| **AT12 – Assign Remaining Task to Another Robot (Delivery)** | Notify a spare robot to take over the unfinished delivery. | AND | Robot | 1 |
+| **AT13 – Trigger Alert & Report** | Send an alert and report to the sector manager when a robot fails to return to a checkpoint. | AND | Robot | 1 |
+
+---
+
+### Summary Table (Goals + Tasks)
+
+| **ID** | **Title** | **Type** | **Relation** |
+|--------|-----------|----------|--------------|
+| G1 | Complete Resource Delivery Mission | Goal | AND |
+| G2 | Collect Resources | Goal | AND |
+| G3 | Deliver Resources | Goal | AND |
+| G2.1 | Plan Collection Route | Goal | AND |
+| G2.1.1 | Estimate Waiting Time | Goal | AND |
+| G2.1.2 | Estimate Path Length | Goal | AND |
+| G2.2 | Request Resources | Goal | AND |
+| G2.2.1 | Send Request Message | Goal | AND |
+| G2.2.2 | Wait for Retrieval Confirmation | Goal | AND |
+| G2.3 | Monitor Battery & Reassign | Goal | AND |
+| G2.3.1 | Check Battery Level | Goal | AND |
+| G2.3.2 | Return to Recharge Station | Goal | AND |
+| G2.3.3 | Assign Mission to Another Robot | Goal | AND |
+| G3.1 | Transport Resources | Goal | AND |
+| G3.1.1 | Make Runs to Destination | Goal | AND |
+| G3.1.1.1 | Navigate to Destination | Goal | AND |
+| G3.1.1.2 | Carry Resources | Goal | AND |
+| G3.2 | Monitor Battery & Reassign | Goal | AND |
+| G3.2.1 | Check Battery Level | Goal | AND |
+| G3.2.2 | Return to Checkpoint | Goal | AND |
+| G3.2.3 | Assign Remaining Task to Another Robot | Goal | AND |
+| G3.3 | Failure Handling | Goal | AND |
+| G3.3.1 | Trigger Alert & Report | Goal | AND |
+| AT1 | Query Storage Waiting Time | Task | AND |
+| AT2 | Compute Path Length | Task | AND |
+| AT3 | Send Resource Request Message | Task | AND |
+| AT4 | Wait for Retrieval Confirmation | Task | AND |
+| AT5 | Check Battery Level (Collection) | Task | AND |
+| AT6 | Return to Recharge Station | Task | AND |
+| AT7 | Assign Mission to Another Robot (Collection) | Task | AND |
+| AT8 | Navigate to Destination | Task | AND |
+| AT9 | Carry Resources | Task | AND |
+| AT10 | Check Battery Level (Delivery) | Task | AND |
+| AT11 | Return to Checkpoint | Task | AND |
+| AT12 | Assign Remaining Task to Another Robot (Delivery) | Task | AND |
+| AT13 | Trigger Alert & Report | Task | AND |
+
+---
+
+### Logical Relationships
+
+```
+G1 -> G2, G3 [AND][;]
+G2 -> G2.1, G2.2, G2.3 [AND][;]
+G3 -> G3.1, G3.2, G3.3 [AND][;]
+G2.1 -> G2.1.1, G2.1.2 [AND][#]
+G2.2 -> G2.2.1, G2.2.2 [AND][;]
+G2.3 -> G2.3.1, G2.3.2, G2.3.3 [AND][;]
+G3.1 -> G3.1.1 [AND][;]
+G3.1.1 -> G3.1.1.1, G3.1.1.2 [AND][;]
+G3.2 -> G3.2.1, G3.2.2, G3.2.3 [AND][;]
+G3.3 -> G3.3.1 [AND][;]
+
+G2.1.1 -> AT1 [AND]
+G2.1.2 -> AT2 [AND]
+G2.2.1 -> AT3 [AND]
+G2.2.2 -> AT4 [AND]
+G2.3.1 -> AT5 [AND]
+G2.3.2 -> AT6 [AND]
+G2.3.3 -> AT7 [AND]
+G3.1.1.1 -> AT8 [AND]
+G3.1.1.2 -> AT9 [AND]
+G3.2.1 -> AT10 [AND]
+G3.2.2 -> AT11 [AND]
+G3.2.3 -> AT12 [AND]
+G3.3.1 -> AT13 [AND]
+```
+
+This goal‑task decomposition captures the full multi‑robot mission: planning, resource request, battery monitoring, parallel execution, and failure handling, with clear execution semantics (parallel, sequential, fallback) and explicit task assignments.

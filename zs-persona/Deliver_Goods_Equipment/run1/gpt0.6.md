@@ -1,0 +1,70 @@
+**Goal Model – Multi‑Robot Resource Delivery**
+
+| **Name**                                      | **Text**                                                                      | **Runtime**            | **Goal Type** | **Relation** | **Ground truth I** | **Ground truth C** | **Ground truth E** |
+| --------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------- | ------------- | ------------ | ------------------ | ------------------ | ------------------ |
+| **G1: Deliver Resources to Destination**      | Achieve that all requested resources are delivered to the specified location. | `;`                    | Achieve       | AND          | Perform                   |Perform                    |                    |
+| **G2: Collection Phase**                      | Perform collection of resources from storages.                                | `FALLBACK(G2.1, G2.4)` | Perform       | AND          | Achieve. Target condition: all resources were collected.                   | OK                   |                    |
+| **G2.1: Execute Collection Tasks**            | Execute collection tasks in parallel across multiple storages.                | `#`                    | Perform       | AND          | OK                   | OK                   |                    |
+| **G2.1.1: Determine Order of Storages**       | Compute the optimal order of storages based on waiting time and path.         | `-`                    | Perform       | AND          | OK                   | OK                   |                    |
+| **G2.1.2: Request Resources**                 | Send message to storage with resource specification and wait for retrieval.   | `-`                    | Perform       | AND          | Query. Enqueried information: get resource specification                   | OK                  |                    |
+| **G2.1.3: Retrieve Resources**                | Retrieve the requested resources from storage.                                | `-`                    | Perform       | AND          | OK                   | OK                   |                    |
+| **G2.4: Reassign Mission**                    | Recharge robot and assign mission to another robot when battery low.          | `;`                    | Perform       | AND          | OK                   | OK                   |                    |
+| **G2.4.1: Recharge Robot**                    | Recharge robot at the charging station.                                       | `-`                    | Perform       | AND          | OK                   | OK                   |                    |
+| **G2.4.2: Assign Mission to Another Robot**   | Assign the remaining collection task to another robot.                        | `-`                    | Perform       | AND          | OK                   | OK                   |                    |
+| **G3: Delivery Phase**                        | Perform delivery of resources to destination.                                 | `FALLBACK(G3.1, G3.2)` | Perform       | AND          | Achieve. Target condition: all resources were delivered                   | OK                  |                    |
+| **G3.1: Deliver Resources**                   | Deliver all collected resources to the specified location.                    | `;`                    | Perform       | AND          | OK                   | OK                   |                    |
+| **G3.1.1: Load Resources**                    | Load resources onto robot.                                                    | `-`                    | Perform       | AND          | OK                   | OK                   |                    |
+| **G3.1.2: Transport to Destination**          | Transport resources to the destination.                                       | `-`                    | Perform       | AND          | OK                   | OK                   |                    |
+| **G3.1.3: Unload Resources**                  | Unload resources at the destination.                                          | `-`                    | Perform       | AND          | OK                   | OK                   |                    |
+| **G3.2: Return to Checkpoint and Reassign**   | Return resources to checkpoint and reassign remaining task when battery low.  | `;`                    | Perform       | AND          | OK                   | OK                   |                    |
+| **G3.2.1: Return to Checkpoint**              | Return to checkpoint with resources.                                          | `;`                    | Perform       | AND          | OK                   | OK                   |                    |
+| **G3.2.1.1: Attempt to Return to Checkpoint** | Attempt to return to checkpoint.                                              | `-`                    | Perform       | AND          | OK                   | OK                   |                    |
+| **G3.2.1.2: Trigger Alert**                   | Trigger alert and send report to sector manager if return fails.              | `-`                    | Perform       | AND          | OK                   |  OK                  |                    |
+| **G3.2.2: Reassign Remaining Task**           | Assign remaining delivery task to another robot.                              | `-`                    | Perform       | AND          | OK                   |  OK                  |                    |
+
+
+---
+
+### Task Model
+
+| **Name** | **Text** | **Relation** | **Location** | **Number of Robots** |
+|----------|----------|--------------|--------------|----------------------|
+| **AT1: Determine Order of Storages** | Compute optimal storage order based on waiting time and path. | AND | Robot (planning) | 1 |
+| **AT2: Request Resources** | Send request message to storage with resource specification. | AND | Storage | 1 |
+| **AT3: Retrieve Resources** | Retrieve resources from storage. | AND | Storage | 1 |
+| **AT4: Recharge Robot** | Recharge robot at charging station. | AND | Charging Station | 1 |
+| **AT5: Assign Mission to Another Robot** | Assign collection mission to another robot. | AND | Robot | 1 |
+| **AT6: Load Resources** | Load resources onto robot. | AND | Storage | 1 |
+| **AT7: Transport to Destination** | Transport resources to destination. | AND | Destination | 1 |
+| **AT8: Unload Resources** | Unload resources at destination. | AND | Destination | 1 |
+| **AT9: Attempt to Return to Checkpoint** | Attempt to return to checkpoint with resources. | AND | Checkpoint | 1 |
+| **AT10: Reassign Remaining Task** | Assign remaining delivery task to another robot. | AND | Robot | 1 |
+| **AT11: Trigger Alert** | Trigger alert and send report to sector manager. | AND | Robot | 1 |
+
+---
+
+### Logical Relationships (Tree)
+
+```
+G1 -> G2, G3 [AND][;]
+G2 -> G2.1, G2.4 [AND][FALLBACK(G2.1, G2.4)]
+G2.1 -> G2.1.1, G2.1.2, G2.1.3 [AND][#]
+G2.1.1 -> AT1 [AND][-]
+G2.1.2 -> AT2 [AND][-]
+G2.1.3 -> AT3 [AND][-]
+G2.4 -> G2.4.1, G2.4.2 [AND][;]
+G2.4.1 -> AT4 [AND][-]
+G2.4.2 -> AT5 [AND][-]
+G3 -> G3.1, G3.2 [AND][FALLBACK(G3.1, G3.2)]
+G3.1 -> G3.1.1, G3.1.2, G3.1.3 [AND][;]
+G3.1.1 -> AT6 [AND][-]
+G3.1.2 -> AT7 [AND][-]
+G3.1.3 -> AT8 [AND][-]
+G3.2 -> G3.2.1, G3.2.2 [AND][;]
+G3.2.1 -> G3.2.1.1, G3.2.1.2 [AND][;]
+G3.2.1.1 -> AT9 [AND][-]
+G3.2.1.2 -> AT11 [AND][-]
+G3.2.2 -> AT10 [AND][-]
+```
+
+*All leaf goals and tasks use the `-` runtime annotation, indicating no further decomposition.*

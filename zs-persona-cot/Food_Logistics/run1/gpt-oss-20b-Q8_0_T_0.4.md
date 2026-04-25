@@ -1,0 +1,115 @@
+**Goal Model – Multi‑Robot Food Delivery Mission**
+
+Below is a complete goal model for the described hospital food‑delivery scenario.  
+All goals and tasks are numbered in a depth‑first order, each with a justification for its type, decomposition, runtime, and relation to its parent.
+
+---
+
+## 1. Goal Table
+
+| **Name**                                        | **Text**                                                               | **Runtime**                            | **Goal Type** | **Target Condition / Enquired Information**                  | **Relation**    | **Justification**                                                                                         | **Ground truth I**                                 | **Ground truth C** | **Ground truth E** |
+| ----------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------- | ------------- | ------------------------------------------------------------ | --------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------ | ------------------ |
+| **G0 – Hospital Food Delivery Mission**         | Deliver food from kitchen to inpatient room and retrieve dirty dishes. | `;`                                    | Achieve       | “Food delivered to inpatient room and all dishes retrieved.” | – (root)        | Sequential execution of door opening, food delivery, and dish retrieval matches the real-world workflow.  | Perform.                                           | Perform              |                    |
+| **G1 – Deliver food to inpatient room**         | Bring the ordered meal(s) to the patient’s room.                       | `FALLBACK(G1.1, G1.2)`                 | Achieve       | “Meal(s) delivered to the patient’s room.”                   | AND (to G0)     | Either direct delivery to the table or fetching from the robot’s tray satisfies the delivery requirement. | OK                                                 | Perform              |                    |
+| **G1.1 – Deliver meal to room table**           | Place the meal on the patient’s table.                                 | `-`                                    | Perform       | “Meal placed on the table.”                                  | OR (to G1)      | Direct table delivery is a valid completion of the delivery goal.                                         | OK                                                 | OK                   |                    |
+| **G1.2 – Fetch meal from robot tray**           | Retrieve the meal from the robot’s tray for the patient.               | `;`                                    | Perform       | “Meal fetched from the robot’s tray.”                        | OR (to G1)      | Fetching is an alternative delivery method when table delivery is not possible.                           | OK                                                 | OK                   |                    |
+| **G1.2.0 – Query patient fetch ability**        | Check if the patient can fetch the meal from the tray.                 | `-`                                    | Query         | “Can the patient fetch the meal from the tray?”              | AND (to G1.2)   | Needed before attempting a fetch; the answer determines the cooperation mode.                             | OK                                                 | OK                   |                    |
+| **G1.2.3 – Fetch meal (choose mode)**           | Decide whether a human or another robot will fetch the meal.           | `FALLBACK(G1.2.1, G1.2.2)`             | Perform       | “Meal fetched by the chosen agent.”                          | AND (to G1.2)   | The robot must try a human fetch first; if that fails, it falls back to robot-robot fetch.                | OK                                                 | OK                   |                    |
+| **G1.2.1 – Fetch meal with human**              | Human retrieves the meal from the robot’s tray.                        | `AND`                                  | Perform       | “Meal fetched by a human.”                                   | OR (to G1.2.3)  | Human fetch is preferred when the patient can do it.                                                      | OK                                                 | OK                   |                    |
+| **G1.2.1.1 – Indicate meal to patient**         | Tell the patient which meal to pick up.                                | `-`                                    | Perform       | “Patient knows which meal to retrieve.”                      | AND (to G1.2.1) | Necessary for correct patient retrieval.                                                                  | OK                                                 | OK                   |                    |
+| **G1.2.1.2 – Track meal retrieval**             | Record the time and location of the meal’s retrieval.                  | `-`                                    | Perform       | “Meal retrieval logged.”                                     | AND (to G1.2.1) | Enables later validation and auditing.                                                                    | OK                                                 | OK                   |                    |
+| **G1.2.1.3 – Alert wrong meal retrieval**       | Notify staff if the patient picks up the wrong meal.                   | `-`                                    | Perform       | “Wrong meal retrieval alerted.”                              | AND (to G1.2.1) | Safety and quality assurance.                                                                             | OK                                                 | OK                   |                    |
+| **G1.2.2 – Fetch meal with robot**              | Another robot fetches the meal from the tray.                          | `-`                                    | Perform       | “Meal fetched by a robot.”                                   | OR (to G1.2.3)  | Used when the patient cannot fetch.                                                                       | OK                                                 | OK                   |                    |
+| **G2 – Retrieve dirty dishes from room**        | Pick up all dirty dishes from the patient’s room.                      | `FALLBACK(FALLBACK(G2.1, G2.2), G2.3)` | Perform       | “All dishes retrieved.”                                      | AND (to G0)     | Dish retrieval is a separate mission step that follows delivery.                                          | Achieve. Target condition: all dish was retrieved. | OK                   |                    |
+| **G2.1 – Retrieve dishes unassisted**           | Robot retrieves dishes alone.                                          | `-`                                    | Perform       | “Dishes retrieved by a single robot.”                        | OR (to G2)      | Preferred when the robot can handle the load.                                                             | OK                                                 | OK                   |                    |
+| **G2.2 – Retrieve dishes with two robots**      | Two robots cooperate to retrieve dishes.                               | `-`                                    | Perform       | “Dishes retrieved by two robots.”                            | OR (to G2)      | Needed for heavier loads or larger dish sets.                                                             | OK                                                 | OK                   |                    |
+| **G2.3 – Retrieve dishes with robot and human** | Robot and a human cooperate to retrieve dishes.                        | `-`                                    | Perform       | “Dishes retrieved by robot and human.”                       | OR (to G2)      | Used when human assistance is available or required.                                                      | OK                                                 | OK                   |                    |
+| **G3 – Open room door**                         | Unlock and open the patient’s room door.                               | `FALLBACK(G3.1, G3.2)`                 | Perform       | “Room door opened.”                                          | AND (to G0)     | Door opening is a prerequisite for both delivery and dish retrieval.                                      | OK                                                 | OK                   |                    |
+| **G3.1 – Open door with human**                 | Human opens the door for the robot.                                    | `-`                                    | Perform       | “Door opened with human assistance.”                         | OR (to G3)      | Human cooperation is common in hospitals.                                                                 | Ok                                                 | OK                   |                    |
+| **G3.2 – Open door with robot**                 | Robot opens the door itself.                                           | `-`                                    | Perform       | “Door opened by robot.”                                      | OR (to G3)      | Robot can use a door-opening tool when no human is present.                                               | OK                                                 | OK                   |                    |
+
+
+---
+
+## 2. Task Table
+
+| **Name** | **Text** | **Relation** | **Location** | **Number of Robots** | **Justification** |
+|----------|----------|--------------|--------------|----------------------|-------------------|
+| **AT1 – Deliver meal to table** | Robot places the meal on the patient’s table. | AND (to G1.1) | Inpatient room | 1 | The robot alone can perform the manipulation. |
+| **AT2 – Indicate meal to patient** | Robot informs the patient which meal to pick up. | AND (to G1.2.1) | Inpatient room | 1 | Robot’s speech or display is sufficient. |
+| **AT3 – Track meal retrieval** | Robot logs the time and location of the meal’s retrieval. | AND (to G1.2.1) | Inpatient room | 1 | Continuous monitoring is handled by the robot. |
+| **AT4 – Alert wrong meal retrieval** | Robot raises an alarm if the wrong meal is taken. | AND (to G1.2.1) | Inpatient room | 1 | Immediate notification is needed for safety. |
+| **AT5 – Fetch meal with robot** | Second robot fetches the meal from the tray. | AND (to G1.2.2) | Inpatient room | 2 | Two robots are required: one to hold the tray, one to retrieve. |
+| **AT6 – Retrieve dishes unassisted** | Robot picks up all dishes by itself. | AND (to G2.1) | Inpatient room | 1 | Robot’s arm can handle typical dish loads. |
+| **AT7 – Retrieve dishes with two robots** | Two robots cooperate to lift and carry dishes. | AND (to G2.2) | Inpatient room | 2 | Joint lifting is needed for heavier loads. |
+| **AT8 – Retrieve dishes with robot and human** | Robot assists a human in picking up dishes. | AND (to G2.3) | Inpatient room | 1 | Human provides the final lift. |
+| **AT9 – Open door with human** | Human opens the door for the robot. | AND (to G3.1) | Room door | 1 | Human presence is often required for safety. |
+| **AT10 – Open door with robot** | Robot uses its door‑opening tool to unlock the door. | AND (to G3.2) | Room door | 1 | Robot can operate the lock mechanism. |
+
+---
+
+## 3. Summary Table (Goals & Tasks)
+
+| **ID** | **Title** | **Type** | **Runtime / Target / Enquiry** |
+|--------|-----------|----------|--------------------------------|
+| **G0** | Hospital Food Delivery Mission | Achieve | “Food delivered & dishes retrieved.” |
+| **G1** | Deliver food to inpatient room | Achieve | `FALLBACK(G1.1, G1.2)` |
+| **G1.1** | Deliver meal to room table | Perform | “Meal placed on table.” |
+| **G1.2** | Fetch meal from robot tray | Perform | `;` |
+| **G1.2.0** | Query patient fetch ability | Query | “Can patient fetch meal?” |
+| **G1.2.3** | Fetch meal (choose mode) | Perform | `FALLBACK(G1.2.1, G1.2.2)` |
+| **G1.2.1** | Fetch meal with human | Perform | `AND` |
+| **G1.2.1.1** | Indicate meal to patient | Perform | “Patient knows meal.” |
+| **G1.2.1.2** | Track meal retrieval | Perform | “Meal retrieval logged.” |
+| **G1.2.1.3** | Alert wrong meal retrieval | Perform | “Wrong meal alerted.” |
+| **G1.2.2** | Fetch meal with robot | Perform | “Meal fetched by robot.” |
+| **G2** | Retrieve dirty dishes from room | Perform | `FALLBACK(FALLBACK(G2.1,G2.2),G2.3)` |
+| **G2.1** | Retrieve dishes unassisted | Perform | “Dishes retrieved by one robot.” |
+| **G2.2** | Retrieve dishes with two robots | Perform | “Dishes retrieved by two robots.” |
+| **G2.3** | Retrieve dishes with robot & human | Perform | “Dishes retrieved by robot & human.” |
+| **G3** | Open room door | Perform | `FALLBACK(G3.1,G3.2)` |
+| **G3.1** | Open door with human | Perform | “Door opened with human.” |
+| **G3.2** | Open door with robot | Perform | “Door opened by robot.” |
+| **AT1** | Deliver meal to table | Task | “Robot places meal on table.” |
+| **AT2** | Indicate meal to patient | Task | “Robot informs patient.” |
+| **AT3** | Track meal retrieval | Task | “Robot logs retrieval.” |
+| **AT4** | Alert wrong meal retrieval | Task | “Robot alerts wrong meal.” |
+| **AT5** | Fetch meal with robot | Task | “Second robot fetches meal.” |
+| **AT6** | Retrieve dishes unassisted | Task | “Robot picks up dishes.” |
+| **AT7** | Retrieve dishes with two robots | Task | “Two robots lift dishes.” |
+| **AT8** | Retrieve dishes with robot & human | Task | “Robot assists human.” |
+| **AT9** | Open door with human | Task | “Human opens door.” |
+| **AT10** | Open door with robot | Task | “Robot unlocks door.” |
+
+---
+
+## 4. Logical Relationships
+
+| **Parent → Children** | **Relation** | **Runtime** | **Justification** |
+|------------------------|--------------|-------------|-------------------|
+| **G0 → G3, G1, G2** | AND | `;` | The mission requires door opening, food delivery, and dish retrieval in sequence. |
+| **G1 → G1.1, G1.2** | OR | `FALLBACK(G1.1,G1.2)` | Either table delivery or tray fetch satisfies the delivery goal. |
+| **G1.2 → G1.2.0, G1.2.3** | AND | `;` | Must query patient ability before attempting fetch, then choose fetch mode. |
+| **G1.2.3 → G1.2.1, G1.2.2** | OR | `FALLBACK(G1.2.1,G1.2.2)` | Prefer human fetch; fall back to robot fetch if human fetch fails. |
+| **G1.2.1 → G1.2.1.1, G1.2.1.2, G1.2.1.3** | AND | `AND` | All three sub‑tasks must succeed for a successful human fetch. |
+| **G2 → G2.1, G2.2, G2.3** | OR | `FALLBACK(FALLBACK(G2.1,G2.2),G2.3)` | Any of the three dish‑retrieval modes can satisfy the goal. |
+| **G3 → G3.1, G3.2** | OR | `FALLBACK(G3.1,G3.2)` | Door can be opened by human or robot. |
+| **AT1 → G1.1** | AND | – | Task implements the perform goal. |
+| **AT2, AT3, AT4 → G1.2.1** | AND | – | Tasks realize the human fetch sub‑goal. |
+| **AT5 → G1.2.2** | AND | – | Task realizes the robot fetch sub‑goal. |
+| **AT6 → G2.1** | AND | – | Task realizes unassisted dish retrieval. |
+| **AT7 → G2.2** | AND | – | Task realizes two‑robot dish retrieval. |
+| **AT8 → G2.3** | AND | – | Task realizes robot‑human dish retrieval. |
+| **AT9 → G3.1** | AND | – | Task realizes human door opening. |
+| **AT10 → G3.2** | AND | – | Task realizes robot door opening. |
+
+---
+
+### Final Remarks
+
+- **Goal Types**: All *Perform* goals correspond to concrete actions that the robot(s) must execute. *Query* goals retrieve necessary information (patient fetch ability) that influences the choice of action. The *Achieve* goals capture the overall mission objectives (delivery, dish retrieval, door opening).  
+- **Runtime Annotations**: `FALLBACK` captures the mission’s uncertainty and alternative strategies; `;` enforces necessary sequencing; `AND` ensures all sub‑tasks must succeed.  
+- **Relations**: OR relations are used where any child suffices; AND relations enforce all children.  
+- **Tasks**: Each task is linked to its parent goal with a clear justification based on the mission description (e.g., number of robots needed, location, etc.).  
+
+This goal model can be directly translated into a multi‑robot planning or execution framework, enabling the system to reason about alternatives, handle uncertainty, and coordinate with humans and other robots.

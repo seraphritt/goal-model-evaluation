@@ -1,0 +1,93 @@
+## Goal and Task Decomposition
+
+
+| **Name**                                      | **Text**                                                                                           | **Runtime**            | **Goal Type** | **Enquired Info / Target Condition**                                      | **Relation** | **Ground truth I**                             | **Ground truth C** | **Ground truth E** |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------- | ------------- | ------------------------------------------------------------------------- | ------------ | ---------------------------------------------- | ------------------ | ------------------ |
+| **G1 – Deliver Food to Inpatient Room**       | Deliver food from the kitchen to an inpatient room, ensuring correct meal placement and retrieval. | `;` (sequential)       | Perform       | –                                                                         | Root         | OK                                             | OK                 |                    |
+| **G2 – Transport Food to Room**               | Transport the prepared meals from the kitchen to the inpatient room.                               | `;`                    | Perform       | –                                                                         | AND          | OK                                             | OK                 |                    |
+| **G4 – Execute Delivery**                     | Deliver the food to the patient, either onto the table or onto the tray.                           | `FALLBACK(G4.1, G4.2)` | Perform       | –                                                                         | AND          | Achieve. Target condition: food was delivered. | OK                 |                    |
+| **G4.1 – Deliver to Table**                   | Place the food onto the patient’s table using the robot’s manipulation skill.                      | `-`                    | Perform       | –                                                                         | OR           | OK                                             | OK                   |                    |
+| **G4.2 – Deliver to Tray**                    | Place the food onto the patient’s tray for the patient to retrieve.                                | `-`                    | Perform       | –                                                                         | OR           | OK                                             | OK                   |                    |
+| **G5 – Handle Retrieval**                     | Manage the retrieval of the meal by the patient or assistance, ensuring the correct meal is taken. | `;`                    | Perform       | –                                                                         | AND          | OK                                             | OK                   |                    |
+| **G5.1 – Query Patient Retrieval Capability** | Query whether the patient can retrieve the meal, presence of companion or nurse.                   | `-`                    | Query         | `Patient retrieval capability, presence of companion, nurse availability` | AND          | OK                                             | OK                   |                    |
+| **G6 – Handle Dish Retrieval**                | Retrieve dirty dishes from the room, possibly with assistance.                                     | `;`                    | Perform       | –                                                                         | AND          | OK                                             | OK                   |                    |
+| **G7 – Manage Door**                          | Open the room door, possibly with assistance from another robot or a human.                        | `;`                    | Perform       | –                                                                         | AND          | OK                                             | OK                   |                    |
+| **G8 – Monitor and Alert**                    | Monitor delivery status and alert if a wrong meal is retrieved.                                    | `-`                    | Perform       | –                                                                         | AND          | OK                                             | OK                   |                    |
+
+
+---
+
+### Task Decomposition
+
+| **Name** | **Text** | **Relation** | **Location** | **Number of Robots** |
+|----------|----------|--------------|--------------|----------------------|
+| **AT1 – Retrieve Order from Kitchen** | Retrieve the meal order from the kitchen station. | AND | kitchen | 1 |
+| **AT2 – Load Meals onto Robot** | Load the retrieved meals onto the robot’s tray. | AND | kitchen | 1 |
+| **AT3 – Drive to Room** | Drive the robot to the patient’s room. | AND | hospital corridor | 1 |
+| **AT4 – Deliver to Table** | Place the food onto the patient’s table. | AND | inpatient room | 1 |
+| **AT5 – Deliver to Tray** | Place the food onto the patient’s tray. | AND | inpatient room | 1 |
+| **AT6 – Notify Patient of Meal** | Notify the patient which meal is ready for retrieval. | AND | inpatient room | 1 |
+| **AT7 – Track Meal Retrieval** | Track when and where each meal is retrieved by the patient. | AND | inpatient room | 1 |
+| **AT8 – Alert Wrong Meal** | Alert if a wrong meal is retrieved. | AND | inpatient room | 1 |
+| **AT9 – Coordinate with Companion or Nurse** | Coordinate with a companion or nurse to assist in meal retrieval. | AND | inpatient room | 1 |
+| **AT10 – Retrieve Dirty Dishes** | Retrieve dirty dishes from the patient’s room. | AND | inpatient room | [1,2] |
+| **AT11 – Open Door for Dish Retrieval** | Open the room door to allow dish retrieval. | AND | room door | 1 |
+| **AT12 – Coordinate with Human for Door Opening** | Coordinate with a human to open the door if needed. | AND | room door | 1 |
+| **AT13 – Open Door with Robot** | Open the room door using the robot’s door‑opening skill. | AND | room door | 1 |
+| **AT14 – Open Door with Human** | Assist a human in opening the room door. | AND | room door | 1 |
+| **AT15 – Wait for Human Signal** | Wait for human signal indicating door can be opened. | AND | room door | 1 |
+| **AT16 – Monitor Delivery Status** | Monitor the status of the food delivery. | AND | inpatient room | 1 |
+| **AT17 – Monitor Door Status** | Monitor the status of the room door. | AND | room door | 1 |
+
+---
+
+## Summary Table (Goals + Tasks)
+
+| **Type** | **ID** | **Title** |
+|----------|--------|-----------|
+| Goal | G1 | Deliver Food to Inpatient Room |
+| Goal | G2 | Transport Food to Room |
+| Goal | G4 | Execute Delivery |
+| Goal | G4.1 | Deliver to Table |
+| Goal | G4.2 | Deliver to Tray |
+| Goal | G5 | Handle Retrieval |
+| Goal | G5.1 | Query Patient Retrieval Capability |
+| Goal | G6 | Handle Dish Retrieval |
+| Goal | G7 | Manage Door |
+| Goal | G8 | Monitor and Alert |
+| Task | AT1 | Retrieve Order from Kitchen |
+| Task | AT2 | Load Meals onto Robot |
+| Task | AT3 | Drive to Room |
+| Task | AT4 | Deliver to Table |
+| Task | AT5 | Deliver to Tray |
+| Task | AT6 | Notify Patient of Meal |
+| Task | AT7 | Track Meal Retrieval |
+| Task | AT8 | Alert Wrong Meal |
+| Task | AT9 | Coordinate with Companion or Nurse |
+| Task | AT10 | Retrieve Dirty Dishes |
+| Task | AT11 | Open Door for Dish Retrieval |
+| Task | AT12 | Coordinate with Human for Door Opening |
+| Task | AT13 | Open Door with Robot |
+| Task | AT14 | Open Door with Human |
+| Task | AT15 | Wait for Human Signal |
+| Task | AT16 | Monitor Delivery Status |
+| Task | AT17 | Monitor Door Status |
+
+---
+
+## Logical Relationships
+
+| **Parent** | **Children** | **Relation** | **Runtime Annotation** |
+|------------|--------------|--------------|------------------------|
+| G1 | G2, G4, G5, G6, G7, G8 | AND | `;` |
+| G2 | AT1, AT2, AT3 | AND | `;` |
+| G4 | G4.1, G4.2 | OR | `FALLBACK(G4.1, G4.2)` |
+| G4.1 | AT4 | AND | `-` |
+| G4.2 | AT5 | AND | `-` |
+| G5 | G5.1, AT6, AT7, AT8, AT9 | AND | `;` |
+| G5.1 | – | – | `-` |
+| G6 | AT10, AT11, AT12 | AND | `;` |
+| G7 | AT13, AT14, AT15 | AND | `;` |
+| G8 | AT16, AT17 | AND | `-` |
+
+These tables and relationships fully capture the mission’s goal hierarchy, task allocation, and execution semantics for a multi‑robot system delivering food to inpatient rooms.

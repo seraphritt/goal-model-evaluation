@@ -1,0 +1,80 @@
+**Goal Model – Multi‑Robot Collection & Delivery Mission**  
+
+| **Name**   | **Text**                             | **Runtime**                | **Goal Type** | **Target / Enquired** | **Relation** | **Ground truth I**                                       | **Ground truth C** | **Ground truth E** |
+| ---------- | ------------------------------------ | -------------------------- | ------------- | --------------------- | ------------ | -------------------------------------------------------- | ------------------ | ------------------ |
+| **G1**     | Collect and Deliver Resources        | `;`                        | Perform       | –                     | AND          | OK                                                       | OK                   |                    |
+| **G1.1**   | Collection Phase                     | `FALLBACK(G1.1.2, G1.1.3)` | Perform       | –                     | OR           | Achieve. Target condition: all resources were collected. | OK                   |                    |
+| **G1.1.1** | Plan Collection Order                | `-`                        | Perform       | –                     | –            | OK                                                       | OK                   |                    |
+| **G1.1.2** | Execute Collection                   | `;`                        | Perform       | –                     | AND          | OK                                                       | OK                   |                    |
+| **G1.1.3** | Handle Low Battery During Collection | `;`                        | Perform       | –                     | AND          | OK                                                       | OK                   |                    |
+| **G1.2**   | Delivery Phase                       | `FALLBACK(G1.2.2, G1.2.3)` | Perform       | –                     | OR           | OK                                                       | OK                   |                    |
+| **G1.2.2** | Execute Delivery                     | `;`                        | Perform       | –                     | AND          | Achieve. Target condition: all resources were delivered. | OK                   |                    |
+| **G1.2.3** | Handle Low Battery During Delivery   | `;`                        | Perform       | –                     | AND          | OK                                                       | OK                   |                    |
+
+
+---
+
+**Task Model**
+
+| **Name** | **Text** | **Relation** | **Location** | **Number of Robots** |
+|----------|----------|--------------|--------------|----------------------|
+| **AT2** | Move to Storage | AND | storage | 1 |
+| **AT3** | Send Request to Storage | AND | storage | 1 |
+| **AT4** | Wait for Retrieval | AND | storage | 1 |
+| **AT5** | Retrieve Resources | AND | storage | 1 |
+| **AT6** | Return to Recharge Station | AND | recharge station | 1 |
+| **AT7** | Reassign Mission to Another Robot | AND | central command | 1 |
+| **AT10** | Move to Destination | AND | destination | 1 |
+| **AT11** | Deliver Resources to Destination | AND | destination | 1 |
+| **AT12** | Return Resource to Checkpoint | AND | checkpoint | 1 |
+| **AT13** | Reassign Mission to Another Robot | AND | central command | 1 |
+| **AT14** | Trigger Alert to Sector Manager | AND | central command | 1 |
+
+---
+
+### Summary Table (Goals + Tasks)
+
+| **ID** | **Title** | **Type** | **Runtime** | **Relation** | **Location** (for tasks) |
+|--------|-----------|----------|-------------|--------------|--------------------------|
+| G1 | Collect & Deliver Resources | Perform | `;` | AND | – |
+| G1.1 | Collection Phase | Perform | `FALLBACK(G1.1.2,G1.1.3)` | OR | – |
+| G1.1.1 | Plan Collection Order | Perform | `-` | – | – |
+| G1.1.2 | Execute Collection | Perform | `;` | AND | – |
+| AT2 | Move to Storage | – | – | AND | storage |
+| AT3 | Send Request to Storage | – | – | AND | storage |
+| AT4 | Wait for Retrieval | – | – | AND | storage |
+| AT5 | Retrieve Resources | – | – | AND | storage |
+| G1.1.3 | Handle Low Battery During Collection | Perform | `;` | AND | – |
+| AT6 | Return to Recharge Station | – | – | AND | recharge station |
+| AT7 | Reassign Mission to Another Robot | – | – | AND | central command |
+| G1.2 | Delivery Phase | Perform | `FALLBACK(G1.2.2,G1.2.3)` | OR | – |
+| G1.2.2 | Execute Delivery | Perform | `;` | AND | – |
+| AT10 | Move to Destination | – | – | AND | destination |
+| AT11 | Deliver Resources to Destination | – | – | AND | destination |
+| G1.2.3 | Handle Low Battery During Delivery | Perform | `;` | AND | – |
+| AT12 | Return Resource to Checkpoint | – | – | AND | checkpoint |
+| AT13 | Reassign Mission to Another Robot | – | – | AND | central command |
+| AT14 | Trigger Alert to Sector Manager | – | – | AND | central command |
+
+---
+
+### Logical Relationships (Tree Structure)
+
+```
+G1 -> G1.1, G1.2 [AND][sequential]
+G1.1 -> G1.1.2, G1.1.3 [OR][fallback]
+G1.1.2 -> G1.1.1, AT2, AT3, AT4, AT5 [AND][sequential]
+G1.1.3 -> AT6, AT7 [AND][sequential]
+G1.2 -> G1.2.2, G1.2.3 [OR][fallback]
+G1.2.2 -> AT10, AT11 [AND][sequential]
+G1.2.3 -> AT12, AT13, AT14 [AND][sequential]
+```
+
+**Explanation of Runtime Annotations**
+
+- `;` – sequential execution of child nodes.  
+- `#` – parallel execution (not used in this model).  
+- `FALLBACK(exp1,exp2)` – try `exp1`; if it fails, fall back to `exp2`.  
+- `-` – leaf goal (no children).  
+
+All goals are **Perform** goals because they describe actions that must be executed. No query or achieve goals are needed in this mission description. All tasks are concrete, location‑aware actions that can be directly assigned to one or more robots.

@@ -1,0 +1,117 @@
+**Goal‑Model Tables**
+
+| **Name**                                       | **Text**                                                                      | **Runtime**                       | **Goal Type** | **Target / Enquired Info**         | **Relation** | **Ground truth I**                                      | **Ground truth C** | **Ground truth E** |
+| ---------------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------- | ------------- | ---------------------------------- | ------------ | ------------------------------------------------------- | ------------------ | ------------------ |
+| **G1 – Provide Meals & Dishes**                | Deliver food to patients and collect dirty dishes                             | `#`                               | Perform       | –                                  | –            | OK                                                      | Ok                   |                    |
+| **G1.1 – Deliver Food**                        | Deliver a meal to an inpatient room                                           | `FALLBACK(G1.1.1,G1.1.2)`         | Perform       | –                                  | AND          | Achieve. Target condition: all food was delivered       | Ok                   |                    |
+| **G1.2 – Retrieve Dishes**                     | Pick up dirty dishes from an inpatient room                                   | `FALLBACK(G1.2.1,G1.2.2)`         | Perform       | –                                  | AND          | Achieve. Target condition: all dishes were retrieved.   | Ok                   |                    |
+| **G1.1.1 – Deliver Food to Table**             | Robot places the meal on the patient’s table                                  | `;`                               | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+| **G1.1.2 – Arrange Meal Retrieval**            | Arrange that the patient (or a helper) fetches the meal from the robot’s tray | `#`                               | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+| **G1.1.1.1 – Open Room Door**                  | Open the patient room door (robot alone or with human)                        | `FALLBACK(AT1,AT2)`               | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+| **G1.1.1.2 – Navigate to Room**                | Robot moves from hallway to patient room                                      | `-`                               | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+| **G1.1.1.3 – Deliver to Table**                | Robot places the meal on the table                                            | `-`                               | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+| **G1.1.1.4 – Verify Correct Meal**             | Confirm that the delivered meal matches the patient’s order                   | `-`                               | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+| **G1.1.1.5 – Alert Wrong Meal**                | Notify staff if an incorrect meal was delivered                               | `-`                               | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+| **G1.1.1.6 – Update Meal Status**              | Record that the meal has been delivered and retrieved                         | `-`                               | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+| **G1.1.2.1 – Query Patient Retrieval Ability** | Ask whether the patient can fetch the meal from the tray                      | `-`                               | Query         | “Can patient fetch meal? (yes/no)” | AND          | OK                                                      | Ok                   |                    |
+| **G1.1.2.2 – Place Food in Tray**              | Robot puts the meal on its tray for the patient to pick up                    | `-`                               | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+| **G1.1.2.3 – Arrange Fetch**                   | Decide how the patient (or a helper) will fetch the meal                      | `FALLBACK(G1.1.2.3.1,G1.1.2.3.2)` | Perform       | –                                  | AND          | Query. Enqueried information: nurse/robot availability. | Ok                   |                    |
+| **G1.1.2.3.1 – Fetch by Companion/Nurse**      | Patient or caregiver retrieves the meal from the robot’s tray                 | `-`                               | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+| **G1.1.2.3.2 – Fetch by Robot**                | Robot retrieves the meal from the patient’s tray (requires two robots)        | `-`                               | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+| **G1.2.1 – Unassisted Dish Retrieval**         | Robot picks up dishes without human help                                      | `#`                               | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+| **G1.2.2 – Assisted Dish Retrieval**           | Robot picks up dishes with help (human or another robot)                      | `#`                               | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+| **G1.2.2.1 – Open Room Door (Assisted)**       | Open the door with robot help or a human                                      | `FALLBACK(AT11,AT12)`             | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+| **G1.2.2.2 – Navigate to Room (Assisted)**     | Robot moves to the patient room (assisted mode)                               | `-`                               | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+| **G1.2.2.3 – Pick Up Dishes (Assisted)**       | Robot collects dishes from the table (assisted)                               | `-`                               | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+| **G1.2.2.4 – Update Dish Status (Assisted)**   | Record that dishes have been collected                                        | `-`                               | Perform       | –                                  | AND          | OK                                                      | Ok                   |                    |
+
+
+---
+
+**Task‑Model Tables**
+
+| **Name** | **Text** | **Relation** | **Location** | **Number of Robots** |
+|----------|----------|--------------|--------------|----------------------|
+| **AT1 – Open Door Alone** | Robot opens the patient room door by itself | OR | Room door | 1 |
+| **AT2 – Open Door with Human** | Robot opens the patient room door with a human | OR | Room door | 1 |
+| **AT3 – Navigate to Room** | Robot moves from hallway to patient room | AND | Hallway | 1 |
+| **AT4 – Deliver to Table** | Robot places a meal on the patient’s table | AND | Room table | 1 |
+| **AT5 – Verify Correct Meal** | Robot verifies that the delivered meal matches the order | AND | Room table | 1 |
+| **AT6 – Alert Wrong Meal** | Robot raises an alert if the wrong meal was delivered | AND | Room table | 1 |
+| **AT7 – Update Meal Status** | Robot updates its internal log that the meal has been delivered | AND | Robot storage | 1 |
+| **AT8 – Place Food in Tray** | Robot puts a meal on its tray for patient retrieval | AND | Robot tray | 1 |
+| **AT9 – Fetch by Companion/Nurse** | Companion or nurse picks up the meal from the robot’s tray | AND | Room table | 1 |
+| **AT10 – Fetch by Robot** | Two robots cooperate to fetch the meal from the patient’s tray | AND | Room table | 2 |
+| **AT11 – Open Door with Robot** | Two robots jointly open the patient room door | OR | Room door | 2 |
+| **AT12 – Open Door with Human** | Robot opens the patient room door with a human | OR | Room door | 1 |
+| **AT13 – Navigate to Room (Assisted)** | Two robots move to the patient room together | AND | Hallway | 2 |
+| **AT14 – Pick Up Dishes (Assisted)** | Two robots cooperate to pick up dishes from the table | AND | Room table | 2 |
+| **AT15 – Update Dish Status (Assisted)** | Robot updates its internal log that dishes have been collected | AND | Robot storage | 1 |
+| **AT16 – Pick Up Dishes (Unassisted)** | Single robot picks up dishes from the table | AND | Room table | 1 |
+| **AT17 – Update Dish Status (Unassisted)** | Robot updates its internal log that dishes have been collected | AND | Robot storage | 1 |
+
+---
+
+**Combined Summary Table (Goals + Tasks)**
+
+| **ID** | **Type** | **Title** | **Relation** | **Runtime / Relation to Parent** |
+|--------|----------|-----------|--------------|----------------------------------|
+| G1 | Goal | Provide Meals & Dishes | – | `#` |
+| G1.1 | Goal | Deliver Food | AND | `FALLBACK(G1.1.1,G1.1.2)` |
+| G1.1.1 | Goal | Deliver Food to Table | AND | `;` |
+| G1.1.1.1 | Goal | Open Room Door | AND | `FALLBACK(AT1,AT2)` |
+| AT1 | Task | Open Door Alone | OR | – |
+| AT2 | Task | Open Door with Human | OR | – |
+| G1.1.1.2 | Goal | Navigate to Room | AND | `-` |
+| AT3 | Task | Navigate to Room | AND | – |
+| G1.1.1.3 | Goal | Deliver to Table | AND | `-` |
+| AT4 | Task | Deliver to Table | AND | – |
+| G1.1.1.4 | Goal | Verify Correct Meal | AND | `-` |
+| AT5 | Task | Verify Correct Meal | AND | – |
+| G1.1.1.5 | Goal | Alert Wrong Meal | AND | `-` |
+| AT6 | Task | Alert Wrong Meal | AND | – |
+| G1.1.1.6 | Goal | Update Meal Status | AND | `-` |
+| AT7 | Task | Update Meal Status | AND | – |
+| G1.1.2 | Goal | Arrange Meal Retrieval | AND | `#` |
+| G1.1.2.1 | Goal | Query Patient Retrieval Ability | AND | `-` |
+| AT8 | Task | – (Query goal) | – | – |
+| G1.1.2.2 | Goal | Place Food in Tray | AND | `-` |
+| AT8 | Task | Place Food in Tray | AND | – |
+| G1.1.2.3 | Goal | Arrange Fetch | AND | `FALLBACK(G1.1.2.3.1,G1.1.2.3.2)` |
+| G1.1.2.3.1 | Goal | Fetch by Companion/Nurse | AND | `-` |
+| AT9 | Task | Fetch by Companion/Nurse | AND | – |
+| G1.1.2.3.2 | Goal | Fetch by Robot | AND | `-` |
+| AT10 | Task | Fetch by Robot | AND | – |
+| G1.2 | Goal | Retrieve Dishes | AND | `FALLBACK(G1.2.1,G1.2.2)` |
+| G1.2.1 | Goal | Unassisted Dish Retrieval | AND | `#` |
+| AT16 | Task | Pick Up Dishes (Unassisted) | AND | – |
+| AT17 | Task | Update Dish Status (Unassisted) | AND | – |
+| G1.2.2 | Goal | Assisted Dish Retrieval | AND | `#` |
+| G1.2.2.1 | Goal | Open Room Door (Assisted) | AND | `FALLBACK(AT11,AT12)` |
+| AT11 | Task | Open Door with Robot | OR | – |
+| AT12 | Task | Open Door with Human | OR | – |
+| G1.2.2.2 | Goal | Navigate to Room (Assisted) | AND | `-` |
+| AT13 | Task | Navigate to Room (Assisted) | AND | – |
+| G1.2.2.3 | Goal | Pick Up Dishes (Assisted) | AND | `-` |
+| AT14 | Task | Pick Up Dishes (Assisted) | AND | – |
+| G1.2.2.4 | Goal | Update Dish Status (Assisted) | AND | `-` |
+| AT15 | Task | Update Dish Status (Assisted) | AND | – |
+
+---
+
+**Logical Relationships**
+
+```
+G1  ->  G1.1, G1.2   [AND]  [#]
+G1.1 ->  G1.1.1, G1.1.2  [OR] [FALLBACK(G1.1.1,G1.1.2)]
+G1.1.1 -> G1.1.1.1, G1.1.1.2, G1.1.1.3, G1.1.1.4, G1.1.1.5, G1.1.1.6  [AND] [;]
+G1.1.1.1 -> AT1, AT2  [OR]  [FALLBACK(AT1,AT2)]
+G1.1.2 -> G1.1.2.1, G1.1.2.2, G1.1.2.3  [AND]  [#]
+G1.1.2.3 -> G1.1.2.3.1, G1.1.2.3.2  [OR]  [FALLBACK(G1.1.2.3.1,G1.1.2.3.2)]
+G1.2 -> G1.2.1, G1.2.2  [OR]  [FALLBACK(G1.2.1,G1.2.2)]
+G1.2.1 -> AT16, AT17  [AND]  [#]
+G1.2.2 -> G1.2.2.1, G1.2.2.2, G1.2.2.3, G1.2.2.4  [AND]  [#]
+G1.2.2.1 -> AT11, AT12  [OR]  [FALLBACK(AT11,AT12)]
+```
+
+This structure captures the full hierarchical decomposition of the mission, the execution semantics (parallel/sequential/fallback), and the precise relationships between goals and their constituent tasks.
