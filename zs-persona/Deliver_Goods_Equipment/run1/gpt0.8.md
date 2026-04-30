@@ -1,6 +1,6 @@
 **Goal Model – Multi‑Robot Resource Delivery Mission**
 
-| **Name**                                           | **Text**                                                                               | **Runtime**               | **Goal Type** | **Relation**                       | **Ground truth I** | **Ground truth C** | **Ground truth E** |
+| **Name**                                           | **Text**                                                                               | **Runtime**               | **Goal Type** | **Relation**                       | **Ground truth I** | **Ground truth C** | **Consensus** |
 | -------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------- | ------------- | ---------------------------------- | ------------------ | ------------------ | ------------------ |
 | **G1: Execute Resource Delivery Mission**          | Perform delivery of the requested resources to the designated agent.                   | `;`                       | Perform       | AND (G2, G3, G5, G6)               | OK                   |OK                    |                    |
 | **G2: Collection Phase**                           | Perform the collection of resources from the storages.                                 | `;`                       | Perform       | AND (G2.1, G2.2, G2.3, G2.4, G2.5) | Achieve. Target condition: all resources were collected.                   | OK                    |                    |
