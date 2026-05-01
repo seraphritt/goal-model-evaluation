@@ -1,18 +1,17 @@
 **Goal‑Model Tables**
 
-| **Name**   | **Text**                          | **Runtime** | **Goal Type** | **Enquired / Target** | **Relation** | **Ground truth I**                                       | **Ground truth C** | **Ground truth E** |
-| ---------- | --------------------------------- | ----------- | ------------- | --------------------- | ------------ | -------------------------------------------------------- | ------------------ | ------------------ |
-| **G1**     | Collect and Deliver Resources     | `;`         | Perform       | –                     | –            | OK                                                       | OK                   |                    |
-| **G1.1**   | Collection Phase                  | `#`         | Perform       | –                     | –            | Achieve. Target condition: all resources were collected. | OK                   |                    |
-| **G1.1.1** | Determine Order of Storage Visits | `-`         | Query         | *Storage visit order* | AND          | OK                                                       | Perform                   |                    |
-| **G1.1.2** | Request Resources from Storage    | `;`         | Perform       | –                     | AND          | Query. Enqueried information: resources to be collected  | OK                   |                    |
-| **G1.1.3** | Battery-Low Handling (Collection) | `-`         | Perform       | –                     | AND          | OK                                                       | OK                   |                    |
-| **G1.2**   | Delivery Phase                    | `#`         | Perform       | –                     | –            | Achieve. Target condition: all resources were delivered. | OK                   |                    |
-| **G1.2.1** | Deliver Resources to Destination  | `;`         | Perform       | –                     | AND          | OK                                                       | OK                   |                    |
-| **G1.2.2** | Battery-Low Handling (Delivery)   | `-`         | Perform       | –                     | AND          | OK                                                       | OK                   |                    |
-| **G1.3**   | Failure Handling                  | `;`         | Perform       | –                     | AND          | OK                                                       | OK                   |                    |
-| **G1.3.1** | Trigger Alert & Report            | `-`         | Perform       | –                     | AND          | OK                                                       | OK                   |                    |
-
+| **Name**   | **Text**                          | **Runtime** | **Goal Type** | **Enquired / Target** | **Relation** | **Ground truth I**                                       | **Ground truth C** | **Consensus**                                            |
+| ---------- | --------------------------------- | ----------- | ------------- | --------------------- | ------------ | -------------------------------------------------------- | ------------------ | -------------------------------------------------------- |
+| **G1**     | Collect and Deliver Resources     | `;`         | Perform       | –                     | –            | OK                                                       | OK                 | OK                                                       |
+| **G1.1**   | Collection Phase                  | `#`         | Perform       | –                     | –            | Achieve. Target condition: all resources were collected. | OK                 | Achieve. Target condition: all resources were collected. |
+| **G1.1.1** | Determine Order of Storage Visits | `-`         | Query         | *Storage visit order* | AND          | OK                                                       | Perform            | OK                                                       |
+| **G1.1.2** | Request Resources from Storage    | `;`         | Perform       | –                     | AND          | Query. Enqueried information: resources to be collected  | OK                 | Query. Enqueried information: resources to be collected  |
+| **G1.1.3** | Battery-Low Handling (Collection) | `-`         | Perform       | –                     | AND          | OK                                                       | OK                 | OK                                                       |
+| **G1.2**   | Delivery Phase                    | `#`         | Perform       | –                     | –            | Achieve. Target condition: all resources were delivered. | OK                 | Achieve. Target condition: all resources were delivered. |
+| **G1.2.1** | Deliver Resources to Destination  | `;`         | Perform       | –                     | AND          | OK                                                       | OK                 | OK                                                       |
+| **G1.2.2** | Battery-Low Handling (Delivery)   | `-`         | Perform       | –                     | AND          | OK                                                       | OK                 | OK                                                       |
+| **G1.3**   | Failure Handling                  | `;`         | Perform       | –                     | AND          | OK                                                       | OK                 | OK                                                       |
+| **G1.3.1** | Trigger Alert & Report            | `-`         | Perform       | –                     | AND          | OK                                                       | OK                 | OK                                                       |
 
 ---
 
