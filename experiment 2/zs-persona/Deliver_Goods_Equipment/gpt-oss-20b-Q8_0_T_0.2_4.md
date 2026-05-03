@@ -1,23 +1,24 @@
 ## 1. Goal Model – Tables
 
-| **Name** | **Text** | **Runtime** | **Goal Type** | **Target Condition / Enquired Information** | **Relation** |
-|----------|----------|-------------|---------------|-------------------------------------------|--------------|
-| **G1** | Complete Resource Delivery Mission | G2;G6;G9;G12;G15 | Achieve | All requested resources delivered to the specified destination. | AND |
-| **G2** | Collect Resources | G3;G4;G5 | Perform | – | AND |
-| **G3** | Plan Collection Route | – | Query | List of storage locations with waiting times and path distances. | AND |
-| **G4** | Request Resources | – | Perform | – | AND |
-| **G5** | Retrieve Resources | – | Perform | – | AND |
-| **G6** | Deliver Resources | G7;G8 | Perform | – | AND |
-| **G7** | Transport Resources to Destination | – | Perform | – | AND |
-| **G8** | Coordinate Parallel Delivery | – | Perform | – | AND |
-| **G9** | Handle Low Battery during Collection | G10;G11 | Perform | – | AND |
-| **G10** | Return to Recharge Station | – | Perform | – | AND |
-| **G11** | Assign Mission to Another Robot | – | Perform | – | AND |
-| **G12** | Handle Low Battery during Delivery | G13;G14 | Perform | – | AND |
-| **G13** | Return Resource to Checkpoint | – | Perform | – | AND |
-| **G14** | Assign Remaining Task to Another Robot | – | Perform | – | AND |
-| **G15** | Handle Failure to Return Resource to Checkpoint | G16 | Perform | – | AND |
-| **G16** | Trigger Alert and Report to Sector Manager | – | Perform | – | AND |
+| **Name** | **Text**                                        | **Runtime**      | **Goal Type** | **Target Condition / Enquired Information**                      | **Relation** | **Ground Truth I** | **Ground Truth G** | **Consensus** |
+| -------- | ----------------------------------------------- | ---------------- | ------------- | ---------------------------------------------------------------- | ------------ | ------------------ | ------------------ | ------------- |
+| **G1**   | Complete Resource Delivery Mission              | G2;G6;G9;G12;G15 | Achieve       | All requested resources delivered to the specified destination.  | AND          |  Perform                  |                    |               |
+| **G2**   | Collect Resources                               | G3;G4;G5         | Perform       | –                                                                | AND          |  Achieve. Target condition: all resources were collected                  |                    |               |
+| **G3**   | Plan Collection Route                           | –                | Query         | List of storage locations with waiting times and path distances. | AND          | OK                   |                    |               |
+| **G4**   | Request Resources                               | –                | Perform       | –                                                                | AND          |  Query. Enqueried information: resources to be collected.                  |                    |               |
+| **G5**   | Retrieve Resources                              | –                | Perform       | –                                                                | AND          |  Perform                  |                    |               |
+| **G6**   | Deliver Resources                               | G7;G8            | Perform       | –                                                                | AND          |  Achieve. Target condition: all resources were delivered                  |                    |               |
+| **G7**   | Transport Resources to Destination              | –                | Perform       | –                                                                | AND          | OK                   |                    |               |
+| **G8**   | Coordinate Parallel Delivery                    | –                | Perform       | –                                                                | AND          |  OK                  |                    |               |
+| **G9**   | Handle Low Battery during Collection            | G10;G11          | Perform       | –                                                                | AND          | Ok                   |                    |               |
+| **G10**  | Return to Recharge Station                      | –                | Perform       | –                                                                | AND          | Ok                   |                    |               |
+| **G11**  | Assign Mission to Another Robot                 | –                | Perform       | –                                                                | AND          |  Ok                  |                    |               |
+| **G12**  | Handle Low Battery during Delivery              | G13;G14          | Perform       | –                                                                | AND          | OK                   |                    |               |
+| **G13**  | Return Resource to Checkpoint                   | –                | Perform       | –                                                                | AND          |  OK                  |                    |               |
+| **G14**  | Assign Remaining Task to Another Robot          | –                | Perform       | –                                                                | AND          |  OK                  |                    |               |
+| **G15**  | Handle Failure to Return Resource to Checkpoint | G16              | Perform       | –                                                                | AND          | OK                   |                    |               |
+| **G16**  | Trigger Alert and Report to Sector Manager      | –                | Perform       | –                                                                | AND          |  OK                  |                    |               |
+
 
 ---
 

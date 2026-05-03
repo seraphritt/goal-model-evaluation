@@ -1,16 +1,17 @@
 **Goal Table**
 
-| Name | Text | Runtime | Goal Type | Target Condition / Enquired Information | Relation |
-|------|------|---------|-----------|----------------------------------------|----------|
-| **G1: Complete Resource Delivery Mission** | Ensure all requested resources are delivered to the requesting agent at the specified location. | `G1.1;G1.2` | Achieve | All requested resources have been delivered to the requesting agent at the specified location. | AND |
-| **G1.1: Collect Resources** | Collect required resources from storage. | `FALLBACK((G1.1.1;G1.1.2), G1.1.3)` | Perform | – | AND |
-| **G1.1.1: Navigate to Storage** | Navigate to the storage location to collect resources. | `-` | Perform | – | AND |
-| **G1.1.2: Send Request and Wait for Retrieval** | Send request to storage and wait until resources are retrieved. | `-` | Perform | – | AND |
-| **G1.1.3: Handle Low Battery during Collection** | Handle low battery by recharging and assigning mission to another robot. | `-` | Perform | – | AND |
-| **G1.2: Deliver Resources** | Deliver collected resources to the requesting location. | `FALLBACK((G1.2.1;G1.2.2), G1.2.3)` | Perform | – | AND |
-| **G1.2.1: Navigate to Delivery Location** | Navigate to the delivery location. | `-` | Perform | – | AND |
-| **G1.2.2: Transport Resources** | Transport resources to the delivery location. | `-` | Perform | – | AND |
-| **G1.2.3: Handle Low Battery during Delivery** | Handle low battery by returning resource to checkpoint, assigning remaining task, or triggering alert. | `-` | Perform | – | AND |
+| Name                                             | Text                                                                                                   | Runtime                             | Goal Type | Target Condition / Enquired Information                                                        | Relation | Ground Truth I | Ground Truth G | Consensus |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------ | ----------------------------------- | --------- | ---------------------------------------------------------------------------------------------- | -------- | -------------- | -------------- | --------- |
+| **G1: Complete Resource Delivery Mission**       | Ensure all requested resources are delivered to the requesting agent at the specified location.        | `G1.1;G1.2`                         | Achieve   | All requested resources have been delivered to the requesting agent at the specified location. | AND      | Perform               |                |           |
+| **G1.1: Collect Resources**                      | Collect required resources from storage.                                                               | `FALLBACK((G1.1.1;G1.1.2), G1.1.3)` | Perform   | –                                                                                              | AND      | Achieve, Target conditon. All resources were collected               |                |           |
+| **G1.1.1: Navigate to Storage**                  | Navigate to the storage location to collect resources.                                                 | `-`                                 | Perform   | –                                                                                              | AND      | OK               |                |           |
+| **G1.1.2: Send Request and Wait for Retrieval**  | Send request to storage and wait until resources are retrieved.                                        | `-`                                 | Perform   | –                                                                                              | AND      | OK               |                |           |
+| **G1.1.3: Handle Low Battery during Collection** | Handle low battery by recharging and assigning mission to another robot.                               | `-`                                 | Perform   | –                                                                                              | AND      |  OK              |                |           |
+| **G1.2: Deliver Resources**                      | Deliver collected resources to the requesting location.                                                | `FALLBACK((G1.2.1;G1.2.2), G1.2.3)` | Perform   | –                                                                                              | AND      |   Achieve. Target condition: all resources were delivered             |                |           |
+| **G1.2.1: Navigate to Delivery Location**        | Navigate to the delivery location.                                                                     | `-`                                 | Perform   | –                                                                                              | AND      | OK               |                |           |
+| **G1.2.2: Transport Resources**                  | Transport resources to the delivery location.                                                          | `-`                                 | Perform   | –                                                                                              | AND      |  OK              |                |           |
+| **G1.2.3: Handle Low Battery during Delivery**   | Handle low battery by returning resource to checkpoint, assigning remaining task, or triggering alert. | `-`                                 | Perform   | –                                                                                              | AND      | OK               |                |           |
+
 
 ---
 

@@ -1,23 +1,23 @@
 **Goal Model – Multi‑Robot Food Delivery**
 
-| **Name** | **Text** | **Runtime** | **Goal Type** | **Target Condition / Enquired Information** | **Relation** |
-|----------|----------|-------------|---------------|-------------------------------------------|--------------|
-| G1 | Deliver food from the kitchen to an inpatient room | G2;G3;G4;G5;G6 | Achieve | Food is on the patient’s table or has been retrieved by the patient / nurse / companion | – (root) |
-| G2 | Receive delivery request from the kitchen | – | Perform | – | AND |
-| G3 | Determine who can retrieve the food | – | Query | *Patient retrieval capability* and *presence of a companion* | AND |
-| G4 | Execute the delivery (choose the appropriate retrieval mode) | FALLBACK(FALLBACK(FALLBACK(G4.1, G4.2), G4.3), G4.4) | Perform | – | AND |
-| G4.1 | Patient retrieves the food | – | Perform | – | AND |
-| G4.2 | Nurse retrieves the food | – | Perform | – | AND |
-| G4.3 | Companion retrieves the food | – | Perform | – | AND |
-| G4.4 | Deliver the food to the patient’s table | – | Perform | – | AND |
-| G5 | Retrieve dirty dishes from the room | FALLBACK(G5.1, FALLBACK(G5.2, G5.3)) | Perform | – | AND |
-| G5.1 | Unassisted dish retrieval | – | Perform | – | AND |
-| G5.2 | Robot‑robot dish retrieval | – | Perform | – | AND |
-| G5.3 | Robot‑human dish retrieval | – | Perform | – | AND |
-| G6 | Open the room door (if required) | FALLBACK(G6.1, FALLBACK(G6.2, G6.3)) | Perform | – | AND |
-| G6.1 | Robot opens the door alone | – | Perform | – | AND |
-| G6.2 | Robot‑human door opening | – | Perform | – | AND |
-| G6.3 | Robot‑robot door opening | – | Perform | – | AND |
+| **Name** | **Text**                                                     | **Runtime**                                          | **Goal Type** | **Target Condition / Enquired Information**                                             | **Relation** | **New Ground Truth I** | **New Ground Truth G** | **Consensus** |
+| -------- | ------------------------------------------------------------ | ---------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------- | ------------ | ------------------ | ------------------ | ------------- |
+| G1       | Deliver food from the kitchen to an inpatient room           | G2;G3;G4;G5;G6                                       | Achieve       | Food is on the patient’s table or has been retrieved by the patient / nurse / companion | – (root)     | Achieve                   |  Achieve                  |               |
+| G2       | Receive delivery request from the kitchen                    | –                                                    | Perform       | –                                                                                       | AND          | OK                   |                    |               |
+| G3       | Determine who can retrieve the food                          | –                                                    | Query         | *Patient retrieval capability* and *presence of a companion*                            | AND          | OK                   |                    |               |
+| G4       | Execute the delivery (choose the appropriate retrieval mode) | FALLBACK(FALLBACK(FALLBACK(G4.1, G4.2), G4.3), G4.4) | Perform       | –                                                                                       | AND          | OK                   |                    |               |
+| G4.1     | Patient retrieves the food                                   | –                                                    | Perform       | –                                                                                       | AND          | OK                   |                    |               |
+| G4.2     | Nurse retrieves the food                                     | –                                                    | Perform       | –                                                                                       | AND          | OK                   |                    |               |
+| G4.3     | Companion retrieves the food                                 | –                                                    | Perform       | –                                                                                       | AND          | OK                   |                    |               |
+| G4.4     | Deliver the food to the patient’s table                      | –                                                    | Perform       | –                                                                                       | AND          | OK                   |                    |               |
+| G5       | Retrieve dirty dishes from the room                          | FALLBACK(G5.1, FALLBACK(G5.2, G5.3))                 | Perform       | –                                                                                       | AND          | Achieve. Target condition: all dishes were retrieved.                   |                    |               |
+| G5.1     | Unassisted dish retrieval                                    | –                                                    | Perform       | –                                                                                       | AND          | OK                   |                    |               |
+| G5.2     | Robot-robot dish retrieval                                   | –                                                    | Perform       | –                                                                                       | AND          | OK                   |                    |               |
+| G5.3     | Robot-human dish retrieval                                   | –                                                    | Perform       | –                                                                                       | AND          | OK                   |                    |               |
+| G6       | Open the room door (if required)                             | FALLBACK(G6.1, FALLBACK(G6.2, G6.3))                 | Perform       | –                                                                                       | AND          | OK                   |                    |               |
+| G6.1     | Robot opens the door alone                                   | –                                                    | Perform       | –                                                                                       | AND          | OK                   |                    |               |
+| G6.2     | Robot-human door opening                                     | –                                                    | Perform       | –                                                                                       | AND          | OK                   |                    |               |
+| G6.3     | Robot-robot door opening                                     | –                                                    | Perform       | –                                                                                       | AND          | OK                   |                    |               |
 
 ---
 

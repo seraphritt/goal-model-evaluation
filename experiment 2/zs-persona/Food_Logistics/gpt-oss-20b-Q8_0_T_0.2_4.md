@@ -1,26 +1,27 @@
 **Goal Model – Multi‑Robot Food Delivery**
 
-| **Name** | **Text** | **Runtime** | **Goal Type** | **Target Condition / Enquired Information** | **Relation** |
-|----------|----------|-------------|---------------|-------------------------------------------|--------------|
-| G1 | Deliver food to inpatient room | G2;G3;G4;G5;G6 | Achieve | Food delivered to the room table **or** patient retrieves the meal | AND |
-| G2 | Query delivery request | – | Query | Order details (meal type, quantity, patient ID) | AND |
-| G3 | Transport food to room | – | Perform | – | AND |
-| G4 | Deliver food to patient | FALLBACK(G4.1, G4.2) | Perform | – | AND |
-| G4.1 | Deliver to table | – | Perform | – | AND |
-| G4.2 | Provide tray for retrieval | AND(G4.2.1, FALLBACK(G4.2.3, G4.2.2)) | Perform | – | AND |
-| G4.2.1 | Query patient retrieval capability | – | Query | Patient’s ability to fetch from tray (yes/no) | AND |
-| G4.2.3 | Place food on tray | – | Perform | – | AND |
-| G4.2.2 | Request assistance | – | Perform | – | AND |
-| G5 | Track meal retrieval | – | Achieve | Retrieval events logged (who, when, which meal) | AND |
-| G6 | Alert wrong meal retrieval | – | Perform | – | AND |
-| G7 | Retrieve dirty dishes | FALLBACK(G7.1, FALLBACK(G7.2, G7.3)) | Perform | – | AND |
-| G7.1 | Unassisted retrieval | – | Perform | – | AND |
-| G7.2 | Cooperation with two robots | – | Perform | – | AND |
-| G7.3 | Cooperation with human | – | Perform | – | AND |
-| G8 | Open room door | FALLBACK(G8.1, G8.2) | Perform | – | AND |
-| G8.1 | Open door alone | – | Perform | – | AND |
-| G8.2 | Open door with assistance | – | Perform | – | AND |
-| G9 | Respond to call for dish pickup | AND(AT13, AT14) | Perform | – | AND |
+| **Name** | **Text**                           | **Runtime**                           | **Goal Type** | **Target Condition / Enquired Information**                        | **Relation** | **Ground Truth I** | **Ground Truth G** | **Consensus** |
+| -------- | ---------------------------------- | ------------------------------------- | ------------- | ------------------------------------------------------------------ | ------------ | ------------------ | ------------------ | ------------- |
+| G1       | Deliver food to inpatient room     | G2;G3;G4;G5;G6                        | Achieve       | Food delivered to the room table **or** patient retrieves the meal | AND          |  Perform                  |                    |               |
+| G2       | Query delivery request             | –                                     | Query         | Order details (meal type, quantity, patient ID)                    | AND          |  OK                  |                    |               |
+| G3       | Transport food to room             | –                                     | Perform       | –                                                                  | AND          |  OK                  |                    |               |
+| G4       | Deliver food to patient            | FALLBACK(G4.1, G4.2)                  | Perform       | –                                                                  | AND          |  Achieve. Target condition: all food was delivered.                  |                    |               |
+| G4.1     | Deliver to table                   | –                                     | Perform       | –                                                                  | AND          |  OK                  |                    |               |
+| G4.2     | Provide tray for retrieval         | AND(G4.2.1, FALLBACK(G4.2.3, G4.2.2)) | Perform       | –                                                                  | AND          |  OK                  |                    |               |
+| G4.2.1   | Query patient retrieval capability | –                                     | Query         | Patient’s ability to fetch from tray (yes/no)                      | AND          |  OK                  |                    |               |
+| G4.2.3   | Place food on tray                 | –                                     | Perform       | –                                                                  | AND          |  OK                  |                    |               |
+| G4.2.2   | Request assistance                 | –                                     | Perform       | –                                                                  | AND          |  OK                  |                    |               |
+| G5       | Track meal retrieval               | –                                     | Achieve       | Retrieval events logged (who, when, which meal)                    | AND          |  OK                  |                    |               |
+| G6       | Alert wrong meal retrieval         | –                                     | Perform       | –                                                                  | AND          |  OK                  |                    |               |
+| G7       | Retrieve dirty dishes              | FALLBACK(G7.1, FALLBACK(G7.2, G7.3))  | Perform       | –                                                                  | AND          |  Achieve. Target condition: all dishes were retrieved                  |                    |               |
+| G7.1     | Unassisted retrieval               | –                                     | Perform       | –                                                                  | AND          | OK                   |                    |               |
+| G7.2     | Cooperation with two robots        | –                                     | Perform       | –                                                                  | AND          | OK                   |                    |               |
+| G7.3     | Cooperation with human             | –                                     | Perform       | –                                                                  | AND          | OK                   |                    |               |
+| G8       | Open room door                     | FALLBACK(G8.1, G8.2)                  | Perform       | –                                                                  | AND          | OK                   |                    |               |
+| G8.1     | Open door alone                    | –                                     | Perform       | –                                                                  | AND          | OK                   |                    |               |
+| G8.2     | Open door with assistance          | –                                     | Perform       | –                                                                  | AND          | OK                   |                    |               |
+| G9       | Respond to call for dish pickup    | AND(AT13, AT14)                       | Perform       | –                                                                  | AND          | OK                   |                    |               |
+
 
 ---
 

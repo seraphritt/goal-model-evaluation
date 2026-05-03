@@ -1,23 +1,23 @@
 ## Goal Model – Multi‑Robot Resource Delivery Mission  
 
-| **Name** | **Text** | **Runtime** | **Goal Type** | **Target Condition / Enquired Information** | **Relation** |
-|----------|----------|-------------|---------------|-------------------------------------------|--------------|
-| **G1: Complete Resource Delivery Mission** | Ensure all requested resources are delivered to the specified location. | G2;G3 | Achieve | All requested resources delivered to the specified location. | AND |
-| **G2: Collect Resources** | Collect all required resources from storage locations. | G2.1;G2.2;G2.3;G2.4;G2.5 | Perform | – | AND |
-| **G2.1: Plan Collection Route** | Retrieve waiting‑time estimation and path to each storage. | AT1 | Query | waiting time estimation, path | AND |
-| **G2.2: Navigate to Storage** | Move robot to the designated storage location. | AT2 | Perform | – | AND |
-| **G2.3: Send Resource Request** | Send request to storage for specified resources. | AT3 | Perform | – | AND |
-| **G2.4: Wait for Resource Retrieval** | Wait until resources are retrieved from storage. | AT4 | Perform | – | AND |
-| **G2.5: Monitor Battery During Collection** | Monitor battery level and handle low battery during collection. | FALLBACK(G2.5.1, G2.5.2) | Perform | – | AND |
-| **G2.5.1: Continue Collecting** | Continue collection if battery is sufficient. | AT5 | Perform | – | AND |
-| **G2.5.2: Battery Low Fallback** | Handle low battery: return to recharging and re‑assign mission. | AT6;AT7 | Perform | – | AND |
-| **G3: Deliver Resources** | Deliver collected resources to the requesting agent’s location. | G3.1;G3.2;G3.3 | Perform | – | AND |
-| **G3.1: Navigate to Delivery Location** | Move robot to the delivery location. | AT8 | Perform | – | AND |
-| **G3.2: Transport Resource** | Carry resources to the delivery location. | AT9 | Perform | – | AND |
-| **G3.3: Monitor Battery During Delivery** | Monitor battery level and handle low battery during delivery. | FALLBACK(G3.3.1, G3.3.2) | Perform | – | AND |
-| **G3.3.1: Continue Delivery** | Continue delivery if battery is sufficient. | AT10 | Perform | – | AND |
-| **G3.3.2: Battery Low Fallback** | Handle low battery: return resource to checkpoint and re‑assign remaining task. | AT11;AT12 | Perform | – | AND |
-| **G4: Assign Parallel Collect‑Deliver Tasks** | Assign parallel collect‑deliver tasks to multiple robots for multiple items. | AT14 | Perform | – | AND |
+| **Name**                                      | **Text**                                                                        | **Runtime**              | **Goal Type** | **Target Condition / Enquired Information**                  | **Relation** | **Ground Truth I** | **Ground Truth G** | **Consensus** |
+| --------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------ | ------------- | ------------------------------------------------------------ | ------------ | ------------------ | ------------------ | ------------- |
+| **G1: Complete Resource Delivery Mission**    | Ensure all requested resources are delivered to the specified location.         | G2;G3                    | Achieve       | All requested resources delivered to the specified location. | AND          |   Perform                 |                    |               |
+| **G2: Collect Resources**                     | Collect all required resources from storage locations.                          | G2.1;G2.2;G2.3;G2.4;G2.5 | Perform       | –                                                            | AND          |   Achieve. target condition: all resources were collected                 |                    |               |
+| **G2.1: Plan Collection Route**               | Retrieve waiting-time estimation and path to each storage.                      | AT1                      | Query         | waiting time estimation, path                                | AND          |  OK                  |                    |               |
+| **G2.2: Navigate to Storage**                 | Move robot to the designated storage location.                                  | AT2                      | Perform       | –                                                            | AND          |  OK                  |                    |               |
+| **G2.3: Send Resource Request**               | Send request to storage for specified resources.                                | AT3                      | Perform       | –                                                            | AND          |  OK                  |                    |               |
+| **G2.4: Wait for Resource Retrieval**         | Wait until resources are retrieved from storage.                                | AT4                      | Perform       | –                                                            | AND          |  OK                  |                    |               |
+| **G2.5: Monitor Battery During Collection**   | Monitor battery level and handle low battery during collection.                 | FALLBACK(G2.5.1, G2.5.2) | Perform       | –                                                            | AND          |   OK                 |                    |               |
+| **G2.5.1: Continue Collecting**               | Continue collection if battery is sufficient.                                   | AT5                      | Perform       | –                                                            | AND          |    OK                |                    |               |
+| **G2.5.2: Battery Low Fallback**              | Handle low battery: return to recharging and re-assign mission.                 | AT6;AT7                  | Perform       | –                                                            | AND          |  OK                  |                    |               |
+| **G3: Deliver Resources**                     | Deliver collected resources to the requesting agent’s location.                 | G3.1;G3.2;G3.3           | Perform       | –                                                            | AND          |    Achieve. Target condition: all resources were delivered.                |                    |               |
+| **G3.1: Navigate to Delivery Location**       | Move robot to the delivery location.                                            | AT8                      | Perform       | –                                                            | AND          |  OK                  |                    |               |
+| **G3.2: Transport Resource**                  | Carry resources to the delivery location.                                       | AT9                      | Perform       | –                                                            | AND          |  OK                  |                    |               |
+| **G3.3: Monitor Battery During Delivery**     | Monitor battery level and handle low battery during delivery.                   | FALLBACK(G3.3.1, G3.3.2) | Perform       | –                                                            | AND          |   OK                 |                    |               |
+| **G3.3.1: Continue Delivery**                 | Continue delivery if battery is sufficient.                                     | AT10                     | Perform       | –                                                            | AND          |    OK                |                    |               |
+| **G3.3.2: Battery Low Fallback**              | Handle low battery: return resource to checkpoint and re-assign remaining task. | AT11;AT12                | Perform       | –                                                            | AND          |   OK                 |                    |               |
+| **G4: Assign Parallel Collect-Deliver Tasks** | Assign parallel collect-deliver tasks to multiple robots for multiple items.    | AT14                     | Perform       | –                                                            | AND          |   OK                 |                    |               |
 
 ---
 
