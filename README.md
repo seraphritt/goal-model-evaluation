@@ -145,7 +145,7 @@ Activate it on Windows PowerShell:
 The repository does not currently include a dependency file. Install the packages used by the scripts directly:
 
 ```bash
-python -m pip install numpy pandas matplotlib
+python -m pip install numpy pandas matplotlib jinja2
 ```
 
 ### 4. Run the analysis from the correct directory

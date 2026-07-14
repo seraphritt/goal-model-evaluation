@@ -10,7 +10,6 @@ import pandas as pd
 
 INPUT_FILE = Path("files/first-and-second-it-results.csv")
 OUTPUT_CSV = Path("summary_by_condition.csv")
-OUTPUT_LATEX = Path("summary_by_condition.tex")
 
 METRIC_ORDER = [
     "T",
@@ -192,45 +191,7 @@ def calculate_statistics(data: pd.DataFrame) -> pd.DataFrame:
 
 
 def export_results(summary: pd.DataFrame) -> None:
-    """Export the numerical results and a LaTeX longtable."""
-
-    # Keep separate numerical columns in the CSV for later analysis.
     summary.to_csv(OUTPUT_CSV, index=False)
-
-    latex_table = summary[
-        [
-            "Iteration",
-            "Mission",
-            "Technique",
-            "Metric",
-            "Estimate",
-            "N",
-        ]
-    ].copy()
-
-    latex_table.columns = [
-        "Prompt iteration",
-        "Mission",
-        "Prompting technique",
-        "Metric",
-        r"$\hat{x} \pm s$",
-        "N",
-    ]
-
-    latex_code = latex_table.to_latex(
-        index=False,
-        escape=False,
-        longtable=True,
-        column_format="llllcr",
-        caption=(
-            "Descriptive statistics separated by prompt iteration, "
-            "robotic mission, and prompting technique."
-        ),
-        label="tab:descriptive-statistics-by-condition",
-        na_rep="--",
-    )
-
-    OUTPUT_LATEX.write_text(latex_code, encoding="utf-8")
 
 
 def main() -> None:
@@ -263,7 +224,6 @@ def main() -> None:
     export_results(summary)
 
     print(f"\nCSV saved to: {OUTPUT_CSV}")
-    print(f"LaTeX table saved to: {OUTPUT_LATEX}")
 
 
 if __name__ == "__main__":
