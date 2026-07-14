@@ -66,14 +66,14 @@ goal-model-evaluation/
 │   └── inital-prompt-exp1.txt
 │
 └── evaluation-files/
-    ├── files/
-    │   ├── first-and-second-it-results.csv
+    ├── metric_plots/
+    │   ├── *.png
     │   ├── metric_means_by_iteration_scenario.csv
     │   └── parsed_long_format.csv
-    ├── figures/
-    │   └── *.png
+    ├── first-and-second-it-results.csv
     ├── metrics.py
-    └── std.py
+    ├── std.py
+    └── summary_by_condition.csv
 ```
 
 ## Evaluation Data
