@@ -94,15 +94,15 @@ It contains five runs for every combination of:
 The metric labels preserved by the dataset are:
 
 ```text
-T
-MAI
-GTC_A
-GTC_Q
-GTC_P
-IC
-NR
-DLC
-RAC
+T - Traceability
+MAI - Mission Aspects Identification
+GTC_A - Goal Type Correctness  - Achieve
+GTC_Q - Goal Type Correctness - Query
+GTC_P - Goal Type Correctness - Perform
+IC - Intention Coverage
+NR - Non-redundancy
+DLC - Decomposition Link Correctness
+RAC - Runtime Annotation Correctness
 ```
 
 Scores are represented on a 0–100 scale. A hyphen (`-`) represents a missing observation rather than a score of zero.
