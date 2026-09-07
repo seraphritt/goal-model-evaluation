@@ -1,176 +1,114 @@
-Below, I model the mission as a **goal tree for a multi-robot hospital meal-service system**. The mission description supports order-based food delivery, alternative handoff modes, uncertain human availability, meal tracking/wrong-meal alerts, dirty-dish retrieval, and cooperative door opening.  The required model structure uses hierarchical AND/OR decomposition, runtime annotations such as `#`, `;`, and `FALLBACK(...)`, and separate goal/task tables.   
+Below is a traceable goal-model decomposition grounded in the pasted mission description. I use `n` for the number of independent resource-storage work packages; when there is only one package, `n=1`, and when multiple items must be collected from different storages, packages can run in parallel. The mission states that robots collect resources from storage, deliver them to the requesting agent, handle low-battery contingencies, and may parallelize collect-deliver tasks across multiple robots.  The model uses AND/OR decomposition, runtime operators, and task attributes as required by the provided definitions.   
 
-## Step-by-step modeling rationale
+## Modeling rationale
 
-1. I treat the mission as having two major service objectives: **deliver ordered meals** and **retrieve dirty dishes**. Both are required system capabilities, but they can occur independently for different rooms or requests, so the root runtime is parallel: `G2#G15`.
-
-2. Food delivery is modeled as a sequential flow: receive/load the order, assess handoff feasibility, access the room, and complete the meal transfer.
-
-3. The meal transfer is modeled with a fallback: tray-based retrieval is attempted when a capable inpatient, companion, nurse, or robot can retrieve the food; if this is not feasible, the system falls back to table placement by a manipulation-capable robot.
-
-4. Uncertainty appears mainly in the handoff context: patient capability, companion presence, nurse availability, and availability of another robot. Therefore, several goals are **Query Goals**.
-
-5. Dirty-dish retrieval is modeled separately because the mission says dirty dishes should be retrieved and that someone in the room can call a robot for pickup. The retrieval mode is also a fallback among unassisted retrieval, two-robot cooperation, and robot-human cooperation.
+1. The top-level mission goal is an **Achieve Goal** because the system must reach a final state: all required resources are delivered to the requesting agent at the specified location.
+2. The mission naturally decomposes into three sequential parts: prepare the mission, collect resources, and deliver resources.
+3. Collection is sequential: navigate to storage, send the request message, then wait until retrieval.
+4. Delivery is sequential and may require multiple runs until all resources are transported.
+5. Low-battery behavior is modeled with `FALLBACK`, because the normal path is attempted first, and contingency behavior is triggered only when the battery threshold condition interrupts the phase.
+6. Parallel execution is modeled at the work-package level: when multiple items are required from different storages, multiple `(collection; delivery)` package instances may run using `#`.
 
 ---
 
-# Goal Table
+## Goal table
 
-| Name                                           | Text                                                                                           |                           Runtime | Goal Type | Target Condition / Enquired Information                                                       | Relation                              | Justification                                                                                                                  |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------: | --------- | --------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| **G1: Support Inpatient Meal Logistics**       | Provide meal delivery and dirty-dish retrieval services for inpatient rooms.                   |                          `G2#G15` | Achieve   | Target: inpatient meal-service logistics are supported.                                       | AND over G2, G15                      | The system must both deliver food and retrieve dirty dishes; these services may be triggered independently.                    |
-| **G2: Deliver Food Order**                     | Deliver ordered food from the kitchen to the inpatient room.                                   |                     `G3;G4;G7;G9` | Achieve   | Target: correct meal is delivered to the inpatient room.                                      | AND under G1                          | Delivery depends on preparation, context assessment, room access, and meal transfer.                                           |
-| **G3: Prepare Order at Kitchen**               | Receive the kitchen delivery request and prepare the meal-carrying robot.                      |                         `AT1;AT2` | Achieve   | Target: requested meal or meals are loaded for delivery.                                      | AND under G2                          | Delivery is order-by-order and starts from a kitchen delivery request.                                                         |
-| **G4: Assess Delivery Handoff Feasibility**    | Determine whether the meal can be retrieved from the tray or must be placed on the room table. |                           `G5#G6` | Query     | Enquired information: patient/companion/nurse/robot ability or availability to retrieve food. | AND under G2                          | The description says tray retrieval depends on cooperation and that this information is uncertain.                             |
-| **G5: Query Patient and Companion Capability** | Query whether the inpatient or companion can retrieve the meal from the tray.                  |                         `AT3#AT4` | Query     | Enquired information: inpatient capability and companion presence.                            | AND under G4                          | The description explicitly says this information can be obtained from the inpatient record and companion presence in the room. |
-| **G6: Query Nurse or Robot Assistance**        | Query whether a nurse or another robot can cooperate in tray retrieval.                        |                         `AT5#AT6` | Query     | Enquired information: nurse availability and assisting-robot availability.                    | AND under G4                          | Tray retrieval may require cooperation with a nurse or another robot if the inpatient cannot retrieve the meal.                |
-| **G7: Access Delivery Room**                   | Move the meal-carrying robot to the inpatient room and obtain room access.                     |                          `AT7;G8` | Achieve   | Target: robot reaches the room and the door is opened.                                        | AND under G2                          | The robot must reach the room before delivery; door opening may require cooperation.                                           |
-| **G8: Open Delivery Door**                     | Open the inpatient room door for food delivery.                                                |               `FALLBACK(AT8,AT9)` | Achieve   | Target: delivery robot obtains access through the room door.                                  | AND under G7, using fallback          | Door opening can involve a human or another robot; fallback captures trying one cooperation mode and then another.             |
-| **G9: Complete Meal Transfer**                 | Transfer the correct meal either by tray retrieval or by table placement.                      |               `FALLBACK(G10,G14)` | Achieve   | Target: meal is physically delivered to the intended inpatient.                               | AND under G2, using fallback          | Tray retrieval is possible with cooperation; table placement is possible with a special manipulation robot skill.              |
-| **G10: Tray-Based Meal Retrieval**             | Support retrieval of the meal from the robot tray.                                             |                     `G11;G12;G13` | Achieve   | Target: correct meal is retrieved from the robot tray and monitored.                          | AND under G9                          | Tray retrieval requires cooperation and must include meal indication, tracking, and wrong-meal alerting.                       |
-| **G11: Identify Correct Meal**                 | Indicate which meal should be retrieved by the given inpatient.                                |                            `AT10` | Perform   | Action: indicate the correct meal.                                                            | AND under G10                         | The robot can carry multiple meals and should indicate which meal belongs to a given inpatient.                                |
-| **G12: Track Meal Retrieval**                  | Track when and where the meal was retrieved.                                                   |                       `AT11;AT12` | Achieve   | Target: retrieval event is observed and recorded.                                             | AND under G10                         | The mission requires tracking when and where each meal was retrieved.                                                          |
-| **G13: Handle Wrong-Meal Retrieval**           | Alert if a wrong meal is retrieved.                                                            |                            `AT13` | Perform   | Action: alert on wrong-meal retrieval.                                                        | AND under G10                         | The system should alert if the wrong meal is retrieved.                                                                        |
-| **G14: Table Placement by Manipulation Robot** | Place the food on the room table using a manipulation-capable robot.                           |                            `AT14` | Achieve   | Target: meal is placed on the room table.                                                     | AND under G9, fallback alternative    | The description says food can be delivered to a room table by a robot, requiring special manipulation skill.                   |
-| **G15: Retrieve Dirty Dishes**                 | Retrieve dirty dishes from the inpatient room.                                                 |                     `G16;G18;G20` | Achieve   | Target: dirty dishes are removed from the room.                                               | AND under G1                          | Dirty dishes should be retrieved from the room.                                                                                |
-| **G16: Obtain Dish Pickup Request**            | Receive a pickup request and gather door-opening information.                                  |                        `AT15;G17` | Query     | Enquired information: pickup request and whether caller can open the door.                    | AND under G15                         | Someone in the room can call a robot and signal whether they can open the door.                                                |
-| **G17: Query Caller Door-Opening Ability**     | Determine whether the person calling can open the door when the robot arrives.                 |                            `AT16` | Query     | Enquired information: caller’s ability to open the door.                                      | AND under G16                         | The mission explicitly says the caller can signal whether they can open the door.                                              |
-| **G18: Access Dish Pickup Room**               | Move to the room and obtain access for dish retrieval.                                         |                        `AT17;G19` | Achieve   | Target: robot reaches the room and gains access.                                              | AND under G15                         | Dish retrieval requires reaching the inpatient room and may require door-opening cooperation.                                  |
-| **G19: Open Dish Pickup Door**                 | Open the room door for dirty-dish pickup.                                                      |             `FALLBACK(AT18,AT19)` | Achieve   | Target: door is opened for dish retrieval.                                                    | AND under G18, using fallback         | Door opening may involve a human or another robot.                                                                             |
-| **G20: Collect Dirty Dishes**                  | Retrieve dishes using the feasible cooperation mode.                                           | `FALLBACK(FALLBACK(G21,G22),G23)` | Achieve   | Target: dirty dishes are collected from the room.                                             | AND under G15, using nested fallback  | Dish retrieval can occur unassisted, with two robots, or with robots and a human.                                              |
-| **G21: Unassisted Dish Retrieval**             | Retrieve dishes without external cooperation.                                                  |                            `AT20` | Achieve   | Target: dishes are collected by the robot alone.                                              | AND under G20, first fallback option  | The description allows unassisted dish retrieval.                                                                              |
-| **G22: Two-Robot Dish Retrieval**              | Retrieve dishes through cooperation between two robots.                                        |                            `AT21` | Achieve   | Target: dishes are collected by two cooperating robots.                                       | AND under G20, second fallback option | The description allows dish retrieval with cooperation of two robots.                                                          |
-| **G23: Robot-Human Dish Retrieval**            | Retrieve dishes through cooperation between robot or robots and a human.                       |                            `AT22` | Achieve   | Target: dishes are collected with human cooperation.                                          | AND under G20, third fallback option  | The description allows dish retrieval with cooperation of robots and a human.                                                  |
+| Name                                      | Text                                                                                                                            |                          Runtime | Goal Type | Correct Goal Type | Target Condition / Enquired Information                                                                       | Relation                         | Justification                                                                                                                                  |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------: | --------- | ----------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **G1: Fulfill Resource Delivery Request** | Ensure that required resources are collected from storage and delivered to the requesting agent at the specified location.      | `G2;((G6ᵢ;G10ᵢ)#...#(G6ₙ;G10ₙ))` | Achieve   |Achieve | Required resources are delivered to the requesting agent at the specified location.                           | Root AND                         | The mission requires collection and delivery; parallel package instances are allowed when multiple items from different storages are involved. |
+| **G2: Prepare Mission**                   | Obtain mission information and decide how the collect-deliver work should be assigned.                                          |                       `G3;G4;G5` | Achieve   | Achieve| Request details, storage plan, and robot assignment plan are available.                                       | AND child of G1                  | Preparation must occur before robots can collect or deliver resources.                                                                         |
+| **G3: Capture Request Details**           | Identify the required resources, requesting agent, and specified delivery location.                                             |                              `-` | Query     |Quest | Required resources, requesting agent, specified location.                                                     | AND child of G2                  | These details are explicitly required for collection and delivery.                                                                             |
+| **G4: Determine Storage Sequence**        | Identify storage places where resources can be found and order them by estimated waiting time plus robot path.                  |                              `-` | Query     | Quest| Ordered list of storage places based on waiting time and path.                                                | AND child of G2                  | The description says the robot visits storage places in an order defined by waiting time plus path.                                            |
+| **G5: Select Robot Assignment Plan**      | Decide whether the mission uses one robot or multiple robots for parallel collect-deliver work packages.                        |                              `-` | Achieve   |Achieve | Robot assignment plan is selected for the required resource-storage packages.                                 | AND child of G2                  | The description allows multiple robots to be assigned when multiple items from different storages are required.                                |
+| **G6: Collect Required Resources**        | Ensure resources are retrieved from storage during the collection phase.                                                        |           `FALLBACK(G7,(G8;G9))` | Achieve   |Achieve | Required resources are retrieved, either by the original robot or by a replacement after low-battery handoff. | AND child of G1 package instance | Normal collection is attempted first; if battery reaches 10%, the robot recharges and assigns the mission to another robot.                    |
+| **G7: Collect With Assigned Robot**       | The assigned robot goes to storage, requests the resources, and waits for retrieval.                                            |                    `AT1;AT2;AT3` | Achieve   |Achieve | Assigned robot has obtained the requested resources from storage.                                             | AND fallback child of G6         | The collection phase requires navigation, precise request messaging, and waiting until resources are retrieved.                                |
+| **G8: Handle Collection Low Battery**     | If battery reaches 10% during collection, the robot returns to the recharging station and assigns the mission to another robot. |                        `AT4;AT5` | Achieve   | Achieve| Low-battery robot is sent to recharge and the mission is reassigned.                                          | AND fallback child of G6         | The mission specifies the 10% battery threshold and reassignment behavior during collection.                                                   |
+| **G9: Replacement Completes Collection**  | The replacement robot continues the remaining collection work.                                                                  |                    `AT6;AT7;AT8` | Achieve   | AChieve| Replacement robot retrieves the remaining required resources.                                                 | AND child after G8               | Reassignment only preserves mission success if the replacement continues the collection phase.                                                 |
+| **G10: Deliver Required Resources**       | Ensure all collected resources are transported to the specified location.                                                       |              `FALLBACK(G11,G12)` | Achieve   |Achieve | Resources are delivered, or delivery contingency is handled.                                                  | AND child of G1 package instance | Delivery begins after retrieval and continues until all resources are taken to the specified location.                                         |
+| **G11: Complete Normal Delivery**         | Transport resources to the specified location using as many runs as necessary and hand them to the requesting agent.            |                       `AT9;AT10` | Achieve   |Achieve | All resources are at the specified location and handed to the requesting agent.                               | AND fallback child of G10        | The description requires as many runs as necessary to move all resources.                                                                      |
+| **G12: Handle Delivery Low Battery**      | If battery reaches 30% during delivery, attempt checkpoint handoff and successor delivery; otherwise escalate.                  |        `FALLBACK((G13;G14),G15)` | Achieve   |Achieve | Resource is safely placed at a checkpoint and remaining delivery is assigned, or failure is escalated.        | AND fallback child of G10        | The 30% delivery threshold requires checkpoint return and reassignment; failure triggers alert/report.                                         |
+| **G13: Return Resource to Checkpoint**    | Place the resource at a checkpoint so another robot can continue the remaining delivery task.                                   |                           `AT11` | Achieve   | Achieve| Resource is positioned at a checkpoint.                                                                       | AND child of G12                 | The description says the robot must return the resource to a checkpoint during delivery low-battery handling.                                  |
+| **G14: Successor Completes Delivery**     | Assign the remaining task to another robot, which knows where the resource is positioned, and complete delivery.                |                      `AT12;AT13` | Achieve   |Achieve | Successor robot knows the checkpoint/resource position and completes delivery to the specified location.      | AND child of G12                 | The replacement robot must know where the resource is positioned and finish the remaining task.                                                |
+| **G15: Escalate Checkpoint Failure**      | Trigger an alert and send a report to the sector manager if the resource cannot be returned to a checkpoint.                    |                      `AT14;AT15` | Perform   |Achieve. Target: an alert has been triggered and the corresponding report has been sent to the sector manager | —                                                                                                             | AND fallback child of G12        | This is an action-oriented contingency: alert and report are executed after checkpoint return failure.                                         |
 
 ---
 
-# Task Table
+## Task table
 
-| Name                                             | Text                                                                            | Relation      | Location                          | Number of Robots | Justification                                                                                                              |
-| ------------------------------------------------ | ------------------------------------------------------------------------------- | ------------- | --------------------------------- | ---------------: | -------------------------------------------------------------------------------------------------------------------------- |
-| **AT1: Receive Kitchen Request**                 | Receive a kitchen delivery request for an inpatient room.                       | AND under G3  | Kitchen                           |                1 | Delivery is made order-by-order in response to kitchen requests.                                                           |
-| **AT2: Load Meal Tray**                          | Load the requested meal or meals onto the robot tray.                           | AND under G3  | Kitchen / robot tray              |                1 | The robot can carry multiple meals and delivers them from the kitchen.                                                     |
-| **AT3: Query Inpatient Record**                  | Retrieve information about whether the inpatient can fetch food from the tray.  | AND under G5  | Inpatient room / inpatient record |                1 | The description says patient capability information can be obtained from the inpatient record.                             |
-| **AT4: Check Companion Presence**                | Determine whether a companion is present in the room and able to retrieve food. | AND under G5  | Inpatient room                    |                1 | Companion presence in the room affects tray-based retrieval feasibility.                                                   |
-| **AT5: Check Nurse Availability**                | Determine whether a nurse is available to cooperate in food retrieval.          | AND under G6  | Inpatient room                    |                1 | A nurse may retrieve the meal, but may not be available at delivery time.                                                  |
-| **AT6: Check Assisting Robot Availability**      | Determine whether another robot can cooperate in tray retrieval.                | AND under G6  | Inpatient room / robot tray       |                1 | Tray retrieval can involve another robot.                                                                                  |
-| **AT7: Navigate to Delivery Room**               | Move the meal-carrying robot from the kitchen to the inpatient room.            | AND under G7  | Kitchen → inpatient room          |                1 | Food must be transported from the kitchen to the inpatient room.                                                           |
-| **AT8: Human-Assisted Door Opening**             | Coordinate with a human to open the inpatient room door.                        | AND under G8  | Room door                         |                1 | Door opening can involve cooperation with a human.                                                                         |
-| **AT9: Robot-Assisted Door Opening**             | Coordinate with another robot to open the inpatient room door.                  | AND under G8  | Room door                         |                2 | Door opening can involve cooperation with another robot.                                                                   |
-| **AT10: Indicate Correct Meal**                  | Show or announce which meal should be retrieved by the intended inpatient.      | AND under G11 | Robot tray / inpatient room       |                1 | The robot may carry multiple meals and should identify the correct one.                                                    |
-| **AT11: Monitor Tray Retrieval**                 | Observe which meal is removed from the tray.                                    | AND under G12 | Robot tray                        |                1 | The system must know when a meal is retrieved and detect wrong retrieval.                                                  |
-| **AT12: Record Retrieval Time and Place**        | Record when and where the meal was retrieved.                                   | AND under G12 | Robot tray / inpatient room       |                1 | The description requires tracking time and location of each meal retrieval.                                                |
-| **AT13: Alert Wrong Meal**                       | Trigger an alert if the wrong meal is retrieved.                                | AND under G13 | Robot tray / inpatient room       |                1 | The robot should alert if a wrong meal is retrieved.                                                                       |
-| **AT14: Place Meal on Room Table**               | Use manipulation skill to place the food on the room table.                     | AND under G14 | Room table                        |                1 | Table delivery requires a special manipulation robot skill.                                                                |
-| **AT15: Receive Dish Pickup Call**               | Receive a call from someone in the room requesting dish pickup.                 | AND under G16 | Inpatient room                    |                1 | Someone in the room can call a robot to pick up dirty dishes.                                                              |
-| **AT16: Obtain Door-Opening Signal**             | Obtain the caller’s signal about whether they can open the door.                | AND under G17 | Inpatient room / room door        |                1 | The caller can signal whether they can open the door when the robot arrives.                                               |
-| **AT17: Navigate to Dish Pickup Room**           | Move the dish-retrieval robot to the inpatient room.                            | AND under G18 | Inpatient room                    |                1 | Dirty dishes must be retrieved from the room.                                                                              |
-| **AT18: Human-Assisted Pickup Door Opening**     | Coordinate with a human to open the door for dish pickup.                       | AND under G19 | Room door                         |                1 | Door opening can involve a human, especially if the caller can open it.                                                    |
-| **AT19: Robot-Assisted Pickup Door Opening**     | Coordinate with another robot to open the door for dish pickup.                 | AND under G19 | Room door                         |                2 | Door opening can involve another robot.                                                                                    |
-| **AT20: Retrieve Dishes Unassisted**             | Pick up dirty dishes without human or robot assistance.                         | AND under G21 | Inpatient room                    |                1 | Dish retrieval can occur unassisted.                                                                                       |
-| **AT21: Retrieve Dishes with Two Robots**        | Use two robots cooperatively to retrieve dirty dishes.                          | AND under G22 | Inpatient room                    |                2 | The mission explicitly allows cooperation of two robots.                                                                   |
-| **AT22: Retrieve Dishes with Human Cooperation** | Retrieve dishes with cooperation between robot or robots and a human.           | AND under G23 | Inpatient room                    |            [1,2] | The description allows cooperation of robots and a human; the range reflects that the exact number of robots is not fixed. |
+| Name                                         | Text                                                                                                        | Relation         | Location                                     |                      Number of Robots | Justification                                                                                     |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------- | -------------------------------------------- | ------------------------------------: | ------------------------------------------------------------------------------------------------- |
+| **AT1: Navigate to Ordered Storages**        | Robot goes to the storage places where the required resources can be found, following the computed order.   | AND child of G7  | Storage places                               | `1` per package; `[1,n]` mission-wide | Collection requires the robot to go to storage places; parallel packages may use multiple robots. |
+| **AT2: Send Resource Request Message**       | Robot sends a message to storage with the precise specification of requested resources.                     | AND child of G7  | Storage                                      | `1` per package; `[1,n]` mission-wide | The description explicitly requires precise resource specification messaging at storage.          |
+| **AT3: Wait for Resource Retrieval**         | Robot waits until the storage has retrieved the requested resources.                                        | AND child of G7  | Storage                                      | `1` per package; `[1,n]` mission-wide | The robot must wait until resources have been retrieved before delivery can begin.                |
+| **AT4: Return to Recharging Station**        | Robot with 10% battery during collection goes back to the recharging station.                               | AND child of G8  | Recharging station                           |                                   `1` | The collection contingency says the low-battery robot returns to recharge.                        |
+| **AT5: Assign Mission to Replacement Robot** | Robot assigns the mission to another robot after collection low-battery detection.                          | AND child of G8  | Recharging station / mission handoff context |                          `2` involved | One robot hands over; another robot receives the mission.                                         |
+| **AT6: Replacement Navigates to Storages**   | Replacement robot goes to remaining storage places where resources can be found.                            | AND child of G9  | Storage places                               |                                   `1` | The reassigned mission still requires collection from storage.                                    |
+| **AT7: Replacement Sends Request Message**   | Replacement robot sends the precise resource request message to storage.                                    | AND child of G9  | Storage                                      |                                   `1` | The same collection protocol applies to the replacement robot.                                    |
+| **AT8: Replacement Waits for Retrieval**     | Replacement robot waits until remaining resources have been retrieved.                                      | AND child of G9  | Storage                                      |                                   `1` | Delivery cannot start until resources are retrieved.                                              |
+| **AT9: Execute Delivery Runs**               | Robot makes as many runs as necessary to transport all resources to the specified location.                 | AND child of G11 | Specified location                           | `1` per package; `[1,n]` mission-wide | Delivery may require multiple runs; parallel packages may use multiple robots.                    |
+| **AT10: Handover to Requesting Agent**       | Robot delivers the transported resources to the requesting agent.                                           | AND child of G11 | Specified location                           | `1` per package; `[1,n]` mission-wide | The final delivery target is the requesting agent at the specified location.                      |
+| **AT11: Return Resource to Checkpoint**      | Robot with 30% battery during delivery returns the resource to a checkpoint.                                | AND child of G13 | Checkpoint                                   |                                   `1` | The delivery contingency requires returning the resource to a checkpoint.                         |
+| **AT12: Assign Remaining Delivery Task**     | Robot assigns the remaining task to another robot and provides the resource position.                       | AND child of G14 | Checkpoint / resource position               |                          `2` involved | The replacement robot must know where the resource is positioned.                                 |
+| **AT13: Successor Delivers from Checkpoint** | Replacement robot retrieves the resource from the known position and delivers it to the specified location. | AND child of G14 | Checkpoint → specified location              |                                   `1` | The remaining task must still end with delivery to the specified location.                        |
+| **AT14: Trigger Alert**                      | Trigger an alert if the robot fails to return the resource to a checkpoint.                                 | AND child of G15 | Checkpoint failure context                   |                                   `1` | The description explicitly requires an alert after checkpoint return failure.                     |
+| **AT15: Send Sector Manager Report**         | Send a report to the sector manager after checkpoint return failure.                                        | AND child of G15 | Sector manager                               |                                   `1` | The description explicitly requires sending the report to the sector manager.                     |
 
 ---
 
-# Summary Table
+## Summary table
 
-| Parent | Children       | Decomposition            | Runtime                           |
-| ------ | -------------- | ------------------------ | --------------------------------- |
-| G1     | G2, G15        | AND                      | `G2#G15`                          |
-| G2     | G3, G4, G7, G9 | AND                      | `G3;G4;G7;G9`                     |
-| G3     | AT1, AT2       | AND                      | `AT1;AT2`                         |
-| G4     | G5, G6         | AND                      | `G5#G6`                           |
-| G5     | AT3, AT4       | AND                      | `AT3#AT4`                         |
-| G6     | AT5, AT6       | AND                      | `AT5#AT6`                         |
-| G7     | AT7, G8        | AND                      | `AT7;G8`                          |
-| G8     | AT8, AT9       | AND with fallback        | `FALLBACK(AT8,AT9)`               |
-| G9     | G10, G14       | AND with fallback        | `FALLBACK(G10,G14)`               |
-| G10    | G11, G12, G13  | AND                      | `G11;G12;G13`                     |
-| G11    | AT10           | AND                      | `AT10`                            |
-| G12    | AT11, AT12     | AND                      | `AT11;AT12`                       |
-| G13    | AT13           | AND                      | `AT13`                            |
-| G14    | AT14           | AND                      | `AT14`                            |
-| G15    | G16, G18, G20  | AND                      | `G16;G18;G20`                     |
-| G16    | AT15, G17      | AND                      | `AT15;G17`                        |
-| G17    | AT16           | AND                      | `AT16`                            |
-| G18    | AT17, G19      | AND                      | `AT17;G19`                        |
-| G19    | AT18, AT19     | AND with fallback        | `FALLBACK(AT18,AT19)`             |
-| G20    | G21, G22, G23  | AND with nested fallback | `FALLBACK(FALLBACK(G21,G22),G23)` |
-| G21    | AT20           | AND                      | `AT20`                            |
-| G22    | AT21           | AND                      | `AT21`                            |
-| G23    | AT22           | AND                      | `AT22`                            |
+| Parent | Children                            | Relation | Runtime / Execution              |
+| ------ | ----------------------------------- | -------- | -------------------------------- |
+| G1     | G2, package instances of G6 and G10 | AND      | `G2;((G6ᵢ;G10ᵢ)#...#(G6ₙ;G10ₙ))` |
+| G2     | G3, G4, G5                          | AND      | `G3;G4;G5`                       |
+| G6     | G7, G8, G9                          | AND      | `FALLBACK(G7,(G8;G9))`           |
+| G7     | AT1, AT2, AT3                       | AND      | `AT1;AT2;AT3`                    |
+| G8     | AT4, AT5                            | AND      | `AT4;AT5`                        |
+| G9     | AT6, AT7, AT8                       | AND      | `AT6;AT7;AT8`                    |
+| G10    | G11, G12                            | AND      | `FALLBACK(G11,G12)`              |
+| G11    | AT9, AT10                           | AND      | `AT9;AT10`                       |
+| G12    | G13, G14, G15                       | AND      | `FALLBACK((G13;G14),G15)`        |
+| G13    | AT11                                | AND      | `AT11`                           |
+| G14    | AT12, AT13                          | AND      | `AT12;AT13`                      |
+| G15    | AT14, AT15                          | AND      | `AT14;AT15`                      |
 
 ---
 
-# Logical Relationships
+## Logical relationships
 
-**G1 → G2, G15 [AND][parallel: `G2#G15`]**
-**Justification:** The mission requires both food delivery and dirty-dish retrieval. They are separate service capabilities and can be active for different rooms or requests at the same time.
+**G1 → G2, G6ᵢ, G10ᵢ [AND][sequential + parallel: `G2;((G6ᵢ;G10ᵢ)#...#(G6ₙ;G10ₙ))`]**
+**Justification:** The mission must first be prepared, then each assigned package must be collected and delivered. The `#` operator captures the case where multiple robots perform collect-deliver packages in parallel for different storages/items.
 
-**G2 → G3, G4, G7, G9 [AND][sequential: `G3;G4;G7;G9`]**
-**Justification:** Delivery must begin with the kitchen request and loading, then determine how the handoff can occur, then reach/access the room, and finally transfer the meal.
+**G2 → G3, G4, G5 [AND][sequential: `G3;G4;G5`]**
+**Justification:** The system must know what resources are required, where they are located, how storage visits are ordered, and how robots are assigned before execution.
 
-**G3 → AT1, AT2 [AND][sequential: `AT1;AT2`]**
-**Justification:** The robot must first receive the delivery request and then load the relevant meal or meals.
+**G6 → G7, G8, G9 [AND][fallback: `FALLBACK(G7,(G8;G9))`]**
+**Justification:** Normal collection is attempted first. If collection is interrupted by the 10% battery condition, the robot returns to recharge, assigns the mission to another robot, and the replacement completes collection.
 
-**G4 → G5, G6 [AND][parallel: `G5#G6`]**
-**Justification:** The system should assess all possible tray-retrieval helpers: inpatient, companion, nurse, or another robot. These information-gathering steps can happen in parallel because they are independent queries.
+**G7 → AT1, AT2, AT3 [AND][sequential: `AT1;AT2;AT3`]**
+**Justification:** The collection phase requires going to storage, sending the precise request, and waiting for retrieval in that order.
 
-**G5 → AT3, AT4 [AND][parallel: `AT3#AT4`]**
-**Justification:** Patient capability and companion presence are both needed to evaluate whether tray-based retrieval is feasible.
+**G8 → AT4, AT5 [AND][sequential: `AT4;AT5`]**
+**Justification:** The low-battery collection robot first returns to the recharging station, then the mission is assigned to another robot.
 
-**G6 → AT5, AT6 [AND][parallel: `AT5#AT6`]**
-**Justification:** Nurse availability and assisting-robot availability are alternative cooperation sources, but querying both improves the system’s ability to select a feasible delivery strategy under uncertainty.
+**G9 → AT6, AT7, AT8 [AND][sequential: `AT6;AT7;AT8`]**
+**Justification:** The replacement robot follows the same storage-navigation, request-message, and wait-for-retrieval logic to complete collection.
 
-**G7 → AT7, G8 [AND][sequential: `AT7;G8`]**
-**Justification:** The robot must first navigate to the inpatient room before opening or obtaining access through the room door.
+**G10 → G11, G12 [AND][fallback: `FALLBACK(G11,G12)`]**
+**Justification:** Normal delivery is attempted first. If delivery is interrupted by the 30% battery condition, the low-battery delivery recovery branch is executed.
 
-**G8 → AT8, AT9 [AND][fallback: `FALLBACK(AT8,AT9)`]**
-**Justification:** Door opening can be supported by a human or by another robot. Fallback is appropriate because the human option may fail or be unavailable.
+**G11 → AT9, AT10 [AND][sequential: `AT9;AT10`]**
+**Justification:** The robot must transport all resources using as many runs as necessary, then complete handover to the requesting agent.
 
-**G9 → G10, G14 [AND][fallback: `FALLBACK(G10,G14)`]**
-**Justification:** Tray-based retrieval is possible when a capable helper exists. If that fails because the patient, companion, nurse, or robot cannot retrieve the meal, the robot can fall back to table placement using manipulation skill.
+**G12 → G13, G14, G15 [AND][fallback: `FALLBACK((G13;G14),G15)`]**
+**Justification:** During delivery low-battery recovery, the robot first attempts checkpoint handoff and successor completion. If returning the resource to a checkpoint fails, the escalation branch is executed.
 
-**G10 → G11, G12, G13 [AND][sequential: `G11;G12;G13`]**
-**Justification:** Tray retrieval requires the robot to indicate the correct meal, monitor and record retrieval, and handle wrong-meal situations.
+**G13 → AT11 [AND][sequential: `AT11`]**
+**Justification:** Returning the resource to a checkpoint is a required single operational step before successor handoff.
 
-**G11 → AT10 [AND]**
-**Justification:** The concrete action for identifying the correct meal is to display or announce which meal should be retrieved.
+**G14 → AT12, AT13 [AND][sequential: `AT12;AT13`]**
+**Justification:** The successor must first receive the remaining task and resource position, then complete the delivery.
 
-**G12 → AT11, AT12 [AND][sequential: `AT11;AT12`]**
-**Justification:** The system must observe the retrieval event before it can record when and where the meal was retrieved.
-
-**G13 → AT13 [AND]**
-**Justification:** The concrete action for wrong-meal handling is to issue an alert.
-
-**G14 → AT14 [AND]**
-**Justification:** The concrete action for table placement is to use a manipulation-capable robot to place the meal on the room table.
-
-**G15 → G16, G18, G20 [AND][sequential: `G16;G18;G20`]**
-**Justification:** Dirty-dish retrieval requires a pickup trigger/context, access to the room, and then dish collection.
-
-**G16 → AT15, G17 [AND][sequential: `AT15;G17`]**
-**Justification:** When someone calls for pickup, the robot should also obtain the caller’s signal about whether they can open the door.
-
-**G17 → AT16 [AND]**
-**Justification:** The concrete action is to obtain the door-opening signal from the caller.
-
-**G18 → AT17, G19 [AND][sequential: `AT17;G19`]**
-**Justification:** The robot must navigate to the room before opening or obtaining access through the door.
-
-**G19 → AT18, AT19 [AND][fallback: `FALLBACK(AT18,AT19)`]**
-**Justification:** The door may be opened with human cooperation; if that fails or no human can help, another robot can cooperate.
-
-**G20 → G21, G22, G23 [AND][nested fallback: `FALLBACK(FALLBACK(G21,G22),G23)`]**
-**Justification:** Dirty dishes may be retrieved unassisted, with two robots, or with robot-human cooperation. Nested fallback models trying simpler autonomy first, then escalating to additional cooperation.
-
-**G21 → AT20 [AND]**
-**Justification:** The operational task for unassisted retrieval is direct dish pickup by one robot.
-
-**G22 → AT21 [AND]**
-**Justification:** The operational task for two-robot retrieval is coordinated pickup by two robots.
-
-**G23 → AT22 [AND]**
-**Justification:** The operational task for robot-human retrieval is cooperative dish pickup involving a human and one or more robots.
+**G15 → AT14, AT15 [AND][sequential: `AT14;AT15`]**
+**Justification:** In case of checkpoint return failure, both alert triggering and report sending are required; therefore, the relation is AND.
 
