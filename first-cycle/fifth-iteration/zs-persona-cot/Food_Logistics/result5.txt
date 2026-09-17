@@ -1,0 +1,210 @@
+I cannot expose a private hidden chain of thought, but I can give a detailed design rationale and a step-by-step modeling trace that is suitable for building the goal model.
+
+## Modeling assumptions
+
+The mission is modeled per delivery request/order. Even if the robot carries multiple meals, each meal is tracked as a specific order for a specific inpatient.
+
+Locations are restricted to locations or location-like sources mentioned in the description: **kitchen**, **inpatient room**, **room table**, **robot tray**, **room door**, and **inpatient record**.
+
+Human helpers are not counted in “Number of Robots.” For example, “robot + nurse” means **1 robot** in the robot-count field.
+
+Key monitored variables include: `order_id`, `meal_id`, `inpatient_id`, `room_id`, `tray_slot`, `retrieval_actor`, `retrieval_capability`, `companion_presence`, `nurse_availability`, `helper_robot_availability`, `door_opening_capability`, `retrieved_meal_id`, `retrieval_time`, `retrieval_location`, and `wrong_meal_detected`.
+
+---
+
+# Goal Nodes
+
+## Food delivery branch
+
+| Name                                       | Text                                                                                                        |                                         Runtime | Goal Type | Target Condition / Queried Property                                                               | Relation         | Justification                                                                                                                                                        |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------: | --------- | ------------------------------------------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **G1: Meal Logistics Fulfilled**           | Fulfill food delivery and dirty dish retrieval services for inpatient rooms.                                |                                        `G2#G26` | Achieve   | Food orders are delivered and dirty dishes are retrieved when requested.                          | AND              | The description requires both food delivery and dirty dish retrieval. They can be handled independently and potentially in parallel by the multi-robot system.       |
+| **G2: Deliver Food Order**                 | Deliver a requested food order from the kitchen to the correct inpatient room and account for the delivery. |                      `G3;G4;G5;G6;G9;(G14#G23)` | Achieve   | The correct meal reaches the intended inpatient room and the delivery/retrieval is recorded.      | AND              | Delivery requires request handling, meal preparation, transport, room access, feasibility assessment, transfer, and tracking.                                        |
+| **G3: Obtain Delivery Request**            | Obtain the kitchen delivery request for a specific order.                                                   |                                             `-` | Query     | `order_id`, `meal_id`, `inpatient_id`, `room_id`, delivery request status.                        | AND child of G2  | The mission says delivery occurs “on an order-by-order basis in response to kitchen delivery requests.”                                                              |
+| **G4: Prepare Meal on Tray**               | Ensure the requested meal is loaded and associated with the correct order and tray position.                |                                             `-` | Achieve   | Meal is on the robot tray and linked to the correct order, inpatient, and tray slot.              | AND child of G2  | The robot can carry multiple meals, so each meal must be identifiable before delivery.                                                                               |
+| **G5: Reach Inpatient Room**               | Move the loaded meal from the kitchen to the inpatient room.                                                |                                             `-` | Achieve   | Robot carrying the meal is at the intended inpatient room.                                        | AND child of G2  | The core mission is delivery “from the kitchen to an inpatient room.”                                                                                                |
+| **G6: Obtain Delivery Room Access**        | Obtain access through the room door for food delivery.                                                      |                               `FALLBACK(G7,G8)` | Achieve   | Room door is opened or access is made possible.                                                   | OR with fallback | The description says opening the room door can involve cooperation with another robot or a human.                                                                    |
+| **G7: Human Opens Door for Delivery**      | A human cooperates by opening the room door for the delivery robot.                                         |                                             `-` | Achieve   | Door is opened by an available human.                                                             | OR child of G6   | Human cooperation is explicitly mentioned as a way to open the door.                                                                                                 |
+| **G8: Robot Opens Door for Delivery**      | Another robot cooperates to open or hold the room door.                                                     |                                             `-` | Achieve   | Door is opened through robot-robot cooperation.                                                   | OR child of G6   | The description explicitly allows door opening through cooperation with another robot.                                                                               |
+| **G9: Assess Tray Retrieval Feasibility**  | Determine whether the meal can be fetched from the robot tray and by whom.                                  |                               `G10#G11#G12#G13` | Query     | Ability/availability of inpatient, companion, nurse, or another robot to retrieve food from tray. | AND child of G2  | Tray retrieval depends on uncertain information about patients, companions, nurses, and helper robots. These checks can be performed in parallel.                    |
+| **G10: Query Patient Ability**             | Check whether the inpatient can retrieve food from the robot tray.                                          |                                             `-` | Query     | `inpatient_can_retrieve_from_tray`.                                                               | AND child of G9  | The description states some inpatients may be unable to fetch food from the tray.                                                                                    |
+| **G11: Query Companion Ability**           | Check whether a companion visitor is present and able to retrieve the meal.                                 |                                             `-` | Query     | `companion_present`, `companion_can_retrieve_from_tray`.                                          | AND child of G9  | The description says companion presence and capability can be derived from patient/room information, but may be uncertain.                                           |
+| **G12: Query Nurse Availability**          | Check whether a nurse is available to retrieve the meal from the tray.                                      |                                             `-` | Query     | `nurse_available`, `nurse_can_retrieve_from_tray`.                                                | AND child of G9  | The description says a nurse may or may not be available at delivery time.                                                                                           |
+| **G13: Query Helper Robot Availability**   | Check whether another robot can cooperate in tray retrieval.                                                |                                             `-` | Query     | `helper_robot_available_for_tray_retrieval`.                                                      | AND child of G9  | Fetching from the tray may require cooperation with another robot.                                                                                                   |
+| **G14: Transfer Meal to Patient Endpoint** | Transfer the meal either by tray retrieval or by placing it on the room table.                              |                             `FALLBACK(G15,G22)` | Achieve   | Meal is made available to the inpatient either from tray retrieval or on the room table.          | OR with fallback | The description gives two alternatives: food can be placed on a room table or fetched from the tray. Fallback handles uncertainty in tray retrieval.                 |
+| **G15: Tray Handoff Completed**            | Complete delivery by having the correct meal fetched from the robot tray.                                   |                                       `G16;G17` | Achieve   | Correct meal is retrieved from the robot tray by an authorized/cooperating actor.                 | AND child of G14 | Tray retrieval requires both indicating the correct meal and having the correct actor retrieve it.                                                                   |
+| **G16: Indicate Correct Meal**             | Indicate which meal should be retrieved for the given inpatient.                                            |                                             `-` | Perform   | Action: indicate meal identity/tray slot to retriever.                                            | AND child of G15 | Required because the robot can carry multiple meals and must indicate which meal belongs to which inpatient.                                                         |
+| **G17: Retrieve Correct Meal from Tray**   | Have the correct meal removed from the robot tray by a feasible actor.                                      | `FALLBACK(FALLBACK(FALLBACK(G18,G19),G20),G21)` | Achieve   | Correct meal is removed from tray by inpatient, companion, nurse, or helper robot.                | OR with fallback | The description lists several possible cooperating actors. Fallback handles unavailable or incapable actors.                                                         |
+| **G18: Inpatient Fetches Meal**            | The inpatient retrieves the assigned meal from the robot tray.                                              |                                             `-` | Achieve   | Inpatient removes the correct meal from the tray.                                                 | OR child of G17  | The inpatient is one possible cooperating retriever.                                                                                                                 |
+| **G19: Companion Fetches Meal**            | A companion visitor retrieves the assigned meal from the robot tray.                                        |                                             `-` | Achieve   | Companion removes the correct meal from the tray.                                                 | OR child of G17  | The description identifies a companion visitor as a possible helper.                                                                                                 |
+| **G20: Nurse Fetches Meal**                | A nurse retrieves the assigned meal from the robot tray.                                                    |                                             `-` | Achieve   | Nurse removes the correct meal from the tray.                                                     | OR child of G17  | The description identifies a nurse as a possible helper.                                                                                                             |
+| **G21: Robot Fetches Meal**                | Another robot retrieves the assigned meal from the delivery robot tray.                                     |                                             `-` | Achieve   | Helper robot removes the correct meal from the tray.                                              | OR child of G17  | The description explicitly allows cooperation with another robot.                                                                                                    |
+| **G22: Place Meal on Room Table**          | Place the food directly onto the room table using manipulation.                                             |                                             `-` | Achieve   | Meal is placed on the room table.                                                                 | OR child of G14  | The description states table delivery is possible but requires a special manipulation robot skill.                                                                   |
+| **G23: Account for Meal Retrieval**        | Track meal retrieval and alert if the wrong meal is retrieved.                                              |                                       `G24#G25` | Achieve   | Retrieval event is recorded and wrong-meal events are alerted.                                    | AND child of G2  | The description explicitly requires tracking when/where each meal was retrieved and alerting on wrong retrieval. These monitoring activities can happen in parallel. |
+| **G24: Track Retrieval Event**             | Record when and where each meal was retrieved or placed.                                                    |                                             `-` | Achieve   | `retrieval_time` and `retrieval_location` are stored for the meal.                                | AND child of G23 | The robot “should track when and where each meal was retrieved.”                                                                                                     |
+| **G25: Alert Wrong Meal Retrieval**        | Alert if a wrong meal is retrieved from the tray.                                                           |                                             `-` | Perform   | Action: issue wrong-meal alert when mismatch is detected.                                         | AND child of G23 | The description explicitly says the robot should alert if a wrong meal is retrieved.                                                                                 |
+
+---
+
+## Dirty dish retrieval branch
+
+| Name                                  | Text                                                                                                       |                           Runtime | Goal Type | Target Condition / Queried Property                       | Relation         | Justification                                                                                                             |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------: | --------- | --------------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **G26: Retrieve Dirty Dishes**        | Retrieve dirty dishes from the inpatient room when requested.                                              |                 `G27;G28;G31;G35` | Achieve   | Dirty dishes are no longer in the inpatient room.         | AND child of G1  | The description states dirty dishes should be retrieved from the room.                                                    |
+| **G27: Obtain Dish Pickup Request**   | Receive a call from someone in the room requesting dish pickup and obtain door-opening signal if provided. |                               `-` | Query     | `dish_pickup_requested`, `caller_can_open_door`.          | AND child of G26 | The description says someone in the room can call a robot and signal if they can open the door.                           |
+| **G28: Obtain Pickup Room Access**    | Obtain access through the room door for dirty dish retrieval.                                              |               `FALLBACK(G29,G30)` | Achieve   | Room door is opened for dish pickup.                      | OR with fallback | Door opening can involve a human or another robot. If the caller can open the door, human cooperation is attempted first. |
+| **G29: Person Opens Door for Pickup** | A person in the room opens the door for the pickup robot.                                                  |                               `-` | Achieve   | Door is opened by a person in the room.                   | OR child of G28  | The caller can signal whether they can open the door when the robot arrives.                                              |
+| **G30: Robot Opens Door for Pickup**  | A cooperating robot opens or holds the door for dish pickup.                                               |                               `-` | Achieve   | Door is opened through robot cooperation.                 | OR child of G28  | The description says door opening can involve another robot.                                                              |
+| **G31: Collect Dirty Dishes**         | Collect dirty dishes from the inpatient room.                                                              | `FALLBACK(FALLBACK(G32,G33),G34)` | Achieve   | Dirty dishes are collected by the robot system.           | OR with fallback | The description gives three alternatives: unassisted, two robots, or robots with a human.                                 |
+| **G32: Unassisted Dish Collection**   | One robot retrieves dirty dishes without assistance.                                                       |                               `-` | Achieve   | Dirty dishes are collected by one robot.                  | OR child of G31  | The description says dish retrieval can occur unassisted.                                                                 |
+| **G33: Two-Robot Dish Collection**    | Two robots cooperate to retrieve dirty dishes.                                                             |                               `-` | Achieve   | Dirty dishes are collected through two-robot cooperation. | OR child of G31  | The description explicitly says retrieval can occur with cooperation of two robots.                                       |
+| **G34: Robot-Human Dish Collection**  | Robot system retrieves dirty dishes with human cooperation.                                                |                               `-` | Achieve   | Dirty dishes are collected with help from a human.        | OR child of G31  | The description says dish retrieval can occur with cooperation of robots and a human.                                     |
+| **G35: Remove Dishes from Room**      | Move the dirty dishes out of the inpatient room.                                                           |                               `-` | Achieve   | Dirty dishes are no longer located in the inpatient room. | AND child of G26 | Retrieval is complete only when the dirty dishes are removed from the room.                                               |
+
+---
+
+# Task Nodes
+
+## Delivery tasks
+
+| Name                                      | Text                                                                                        | Relation         | Location                                 | Number of Robots | Justification                                                                                 |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------- | ---------------------------------------- | ---------------: | --------------------------------------------------------------------------------------------- |
+| **AT1: Read Kitchen Request**             | Read the kitchen delivery request and extract order, meal, inpatient, and room information. | AND child of G3  | Kitchen                                  |                1 | Delivery is triggered by kitchen delivery requests on an order-by-order basis.                |
+| **AT2: Load Meal on Tray**                | Load the requested meal or meals onto the robot tray.                                       | AND child of G4  | Kitchen / robot tray                     |                1 | The robot carries meals from the kitchen and may carry multiple meals.                        |
+| **AT3: Bind Meal to Tray Slot**           | Associate each meal with its order, inpatient, room, and tray position.                     | AND child of G4  | Kitchen / robot tray                     |                1 | Required because the robot may carry multiple meals and must know which meal belongs to whom. |
+| **AT4: Navigate to Room**                 | Move from the kitchen to the target inpatient room carrying the meal.                       | AND child of G5  | Kitchen → inpatient room                 |                1 | The mission requires food delivery from the kitchen to an inpatient room.                     |
+| **AT5: Request Human Door Opening**       | Ask an available human to open the room door.                                               | OR child of G7   | Room door                                |                1 | Door opening may involve human cooperation.                                                   |
+| **AT6: Enter After Human Opens Door**     | Pass through the room door after the human opens it.                                        | AND child of G7  | Room door                                |                1 | The robot must access the room to complete delivery.                                          |
+| **AT7: Coordinate Door Robot**            | Coordinate with another robot for room-door opening.                                        | AND child of G8  | Room door                                |                2 | Cooperation with another robot implies the delivery robot plus a helper robot.                |
+| **AT8: Open or Hold Door by Robots**      | Use robot-robot cooperation to open or hold the room door.                                  | AND child of G8  | Room door                                |                2 | The description explicitly allows robot cooperation for opening the door.                     |
+| **AT9: Query Inpatient Record**           | Query the inpatient record for the patient’s ability to retrieve food from the tray.        | AND child of G10 | Inpatient record                         |                1 | The description says this information can be obtained from the inpatient record.              |
+| **AT10: Check Companion Presence**        | Check whether a companion is present in the room and able to retrieve the meal.             | AND child of G11 | Inpatient room / inpatient record        |                1 | Companion presence in the room is part of the uncertainty described.                          |
+| **AT11: Check Nurse Availability**        | Check whether a nurse is available and able to retrieve the meal.                           | AND child of G12 | Inpatient room                           |                1 | A nurse may or may not be available at delivery time.                                         |
+| **AT12: Check Helper Robot Availability** | Check whether another robot is available to cooperate in tray retrieval.                    | AND child of G13 | Inpatient room / robot tray              |                1 | Tray fetching may require cooperation with another robot.                                     |
+| **AT13: Announce Correct Meal**           | Indicate the correct meal, tray slot, and intended inpatient to the retrieving actor.       | AND child of G16 | Robot tray / inpatient room              |                1 | Required because the robot may carry multiple meals.                                          |
+| **AT14: Present Tray to Inpatient**       | Position the tray so the inpatient can retrieve the correct meal.                           | OR child of G18  | Robot tray / inpatient room              |                1 | This realizes the inpatient-fetch alternative.                                                |
+| **AT15: Present Tray to Companion**       | Position the tray so a companion can retrieve the correct meal.                             | OR child of G19  | Robot tray / inpatient room              |                1 | This realizes the companion-fetch alternative.                                                |
+| **AT16: Present Tray to Nurse**           | Position the tray so a nurse can retrieve the correct meal.                                 | OR child of G20  | Robot tray / inpatient room              |                1 | This realizes the nurse-fetch alternative.                                                    |
+| **AT17: Coordinate Robot Tray Retrieval** | Coordinate with a helper robot to remove the correct meal from the tray.                    | OR child of G21  | Robot tray / inpatient room              |                2 | “Another robot” implies two robots total: the carrier and the helper.                         |
+| **AT18: Manipulate Meal to Table**        | Use manipulation skill to place the meal on the room table.                                 | OR child of G22  | Room table                               |                1 | The description says table placement requires a special manipulation robot skill.             |
+| **AT19: Record Meal Retrieval**           | Record meal ID, retrieval time, and retrieval location.                                     | AND child of G24 | Robot tray / room table / inpatient room |                1 | The robot must track when and where each meal was retrieved.                                  |
+| **AT20: Alert Wrong Meal**                | Detect mismatch between intended meal and retrieved meal, then issue an alert.              | AND child of G25 | Robot tray / inpatient room              |                1 | The robot should alert if the wrong meal is retrieved.                                        |
+
+---
+
+## Dirty dish retrieval tasks
+
+| Name                                      | Text                                                                  | Relation         | Location                   | Number of Robots | Justification                                                                       |
+| ----------------------------------------- | --------------------------------------------------------------------- | ---------------- | -------------------------- | ---------------: | ----------------------------------------------------------------------------------- |
+| **AT21: Receive Dish Pickup Call**        | Receive the dish pickup call from someone in the room.                | AND child of G27 | Inpatient room             |                1 | The description says someone in the room can call a robot to pick up dishes.        |
+| **AT22: Receive Door Signal**             | Record whether the caller can open the door when the robot arrives.   | AND child of G27 | Inpatient room / room door |                1 | The caller can signal whether they can open the door.                               |
+| **AT23: Request Caller Door Opening**     | Ask the caller or another person in the room to open the door.        | OR child of G29  | Room door                  |                1 | Human door opening is an allowed cooperation mode.                                  |
+| **AT24: Coordinate Door Helper Robot**    | Coordinate a second robot for door opening during dish pickup.        | AND child of G30 | Room door                  |                2 | Another robot may cooperate to open the room door.                                  |
+| **AT25: Open Door with Robots**           | Open or hold the room door using robot-robot cooperation.             | AND child of G30 | Room door                  |                2 | This operationalizes the robot-assisted door-opening alternative.                   |
+| **AT26: Pick Up Dishes Unassisted**       | One robot collects the dirty dishes without help.                     | OR child of G32  | Inpatient room             |                1 | Dish retrieval can occur unassisted.                                                |
+| **AT27: Coordinate Two-Robot Collection** | Coordinate two robots around the dirty dishes.                        | AND child of G33 | Inpatient room             |                2 | The mission explicitly mentions cooperation of two robots.                          |
+| **AT28: Collect Dishes with Two Robots**  | Retrieve and load the dirty dishes using two robots.                  | AND child of G33 | Inpatient room             |                2 | Some dish retrieval situations may need two-robot cooperation.                      |
+| **AT29: Request Human Dish Handoff**      | Request human cooperation for handing over or preparing dirty dishes. | AND child of G34 | Inpatient room             |                1 | The mission allows cooperation between robots and a human.                          |
+| **AT30: Load Dishes with Human Help**     | Robot receives or loads dirty dishes with human cooperation.          | AND child of G34 | Inpatient room             |                1 | Human cooperation can make dish retrieval feasible when unassisted retrieval fails. |
+| **AT31: Exit Room with Dishes**           | Move the collected dirty dishes out of the inpatient room.            | AND child of G35 | Inpatient room / room door |                1 | The target condition is that dirty dishes are retrieved from the room.              |
+
+---
+
+# Summary Table
+
+| Parent | Children                     | Relation | Runtime / Ordering                              |
+| ------ | ---------------------------- | -------- | ----------------------------------------------- |
+| G1     | G2, G26                      | AND      | `G2#G26`                                        |
+| G2     | G3, G4, G5, G6, G9, G14, G23 | AND      | `G3;G4;G5;G6;G9;(G14#G23)`                      |
+| G3     | AT1                          | AND      | Task-level execution                            |
+| G4     | AT2, AT3                     | AND      | `AT2;AT3`                                       |
+| G5     | AT4                          | AND      | Task-level execution                            |
+| G6     | G7, G8                       | OR       | `FALLBACK(G7,G8)`                               |
+| G7     | AT5, AT6                     | AND      | `AT5;AT6`                                       |
+| G8     | AT7, AT8                     | AND      | `AT7;AT8`                                       |
+| G9     | G10, G11, G12, G13           | AND      | `G10#G11#G12#G13`                               |
+| G10    | AT9                          | AND      | Task-level execution                            |
+| G11    | AT10                         | AND      | Task-level execution                            |
+| G12    | AT11                         | AND      | Task-level execution                            |
+| G13    | AT12                         | AND      | Task-level execution                            |
+| G14    | G15, G22                     | OR       | `FALLBACK(G15,G22)`                             |
+| G15    | G16, G17                     | AND      | `G16;G17`                                       |
+| G16    | AT13                         | AND      | Task-level execution                            |
+| G17    | G18, G19, G20, G21           | OR       | `FALLBACK(FALLBACK(FALLBACK(G18,G19),G20),G21)` |
+| G18    | AT14                         | OR       | Task-level execution                            |
+| G19    | AT15                         | OR       | Task-level execution                            |
+| G20    | AT16                         | OR       | Task-level execution                            |
+| G21    | AT17                         | OR       | Task-level execution                            |
+| G22    | AT18                         | OR       | Task-level execution                            |
+| G23    | G24, G25                     | AND      | `G24#G25`                                       |
+| G24    | AT19                         | AND      | Task-level execution                            |
+| G25    | AT20                         | AND      | Task-level execution                            |
+| G26    | G27, G28, G31, G35           | AND      | `G27;G28;G31;G35`                               |
+| G27    | AT21, AT22                   | AND      | `AT21#AT22`                                     |
+| G28    | G29, G30                     | OR       | `FALLBACK(G29,G30)`                             |
+| G29    | AT23                         | OR       | Task-level execution                            |
+| G30    | AT24, AT25                   | AND      | `AT24;AT25`                                     |
+| G31    | G32, G33, G34                | OR       | `FALLBACK(FALLBACK(G32,G33),G34)`               |
+| G32    | AT26                         | OR       | Task-level execution                            |
+| G33    | AT27, AT28                   | AND      | `AT27;AT28`                                     |
+| G34    | AT29, AT30                   | AND      | `AT29;AT30`                                     |
+| G35    | AT31                         | AND      | Task-level execution                            |
+
+---
+
+# Logical Relationships and Justifications
+
+* **G1 -> G2, G26 [AND][G2#G26]**
+  **Justification:** The mission includes two required capabilities: delivering food and retrieving dirty dishes. They are independent service flows and can occur in parallel for different rooms or requests.
+
+* **G2 -> G3, G4, G5, G6, G9, G14, G23 [AND][G3;G4;G5;G6;G9;(G14#G23)]**
+  **Justification:** A delivery cannot be completed unless the request is known, the meal is prepared, the robot reaches the room, access is obtained, retrieval feasibility is assessed, the meal is transferred, and the event is tracked. Transfer and accountability monitoring can happen in parallel once delivery begins.
+
+* **G3 -> AT1 [AND]**
+  **Justification:** Reading the kitchen request is the concrete operation needed to satisfy the query goal.
+
+* **G4 -> AT2, AT3 [AND][AT2;AT3]**
+  **Justification:** The meal must be physically loaded and logically associated with order/patient/tray information. Loading without identity binding is unsafe because the robot may carry multiple meals.
+
+* **G5 -> AT4 [AND]**
+  **Justification:** Moving from kitchen to inpatient room is the operational task that realizes the transport goal.
+
+* **G6 -> G7, G8 [OR][FALLBACK(G7,G8)]**
+  **Justification:** Door opening can involve either a human or another robot. Human opening is attempted first because it may require fewer robotic resources; robot cooperation is the fallback.
+
+* **G7 -> AT5, AT6 [AND][AT5;AT6]**
+  **Justification:** The robot must request human assistance and then use the opened doorway.
+
+* **G8 -> AT7, AT8 [AND][AT7;AT8]**
+  **Justification:** Robot-assisted door opening requires coordination with the helper robot and execution of the opening/holding action.
+
+* **G9 -> G10, G11, G12, G13 [AND][G10#G11#G12#G13]**
+  **Justification:** The feasibility of tray retrieval depends on several uncertain actors: inpatient, companion, nurse, and helper robot. These checks can be performed in parallel.
+
+* **G14 -> G15, G22 [OR][FALLBACK(G15,G22)]**
+  **Justification:** The mission provides two delivery modes: tray fetching or table placement. Because tray fetching depends on uncertain human/robot cooperation, table placement is modeled as a fallback requiring manipulation skill.
+
+* **G15 -> G16, G17 [AND][G16;G17]**
+  **Justification:** Tray handoff requires first indicating the correct meal and then having the meal retrieved.
+
+* **G17 -> G18, G19, G20, G21 [OR][FALLBACK(FALLBACK(FALLBACK(G18,G19),G20),G21)]**
+  **Justification:** The meal may be retrieved by the inpatient, companion, nurse, or another robot. Fallback reflects uncertainty in availability and capability.
+
+* **G23 -> G24, G25 [AND][G24#G25]**
+  **Justification:** Tracking retrieval and alerting on wrong-meal retrieval are both mandatory safety/accountability requirements. They can run in parallel during handoff.
+
+* **G26 -> G27, G28, G31, G35 [AND][G27;G28;G31;G35]**
+  **Justification:** Dirty dish retrieval requires a pickup request, room access, collection, and removal from the room.
+
+* **G27 -> AT21, AT22 [AND][AT21#AT22]**
+  **Justification:** The robot must receive the pickup call and, when provided, capture the caller’s door-opening signal. These pieces of information are obtained together.
+
+* **G28 -> G29, G30 [OR][FALLBACK(G29,G30)]**
+  **Justification:** The door can be opened by a person or by another robot. If the caller says they can open the door, human opening is attempted first.
+
+* **G31 -> G32, G33, G34 [OR][FALLBACK(FALLBACK(G32,G33),G34)]**
+  **Justification:** Dish retrieval can occur unassisted, with two robots, or with robots and a human. The fallback order starts with the lowest robot-team complexity and escalates if needed.
+
+* **G35 -> AT31 [AND]**
+  **Justification:** The dirty dishes are only retrieved from the room when they are physically removed from it.
+
