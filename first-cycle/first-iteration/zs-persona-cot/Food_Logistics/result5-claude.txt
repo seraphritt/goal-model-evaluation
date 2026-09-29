@@ -1,0 +1,209 @@
+# Goal model: hospital food delivery and dish retrieval
+
+**Modeling assumptions**
+- Goal IDs (G) and task IDs (AT) are numbered depth-first.
+- Tasks are leaves. Every task hangs under a leaf goal, which uses "-" as its runtime because the runtime operators only apply to goal children.
+- Where several AND tasks sit under one goal, they run in the listed order.
+- Uncertainty about who can retrieve a meal is handled by the query goal G4, which returns a confidence value with each answer. G4 and the retrieval alternatives (G19-G22) are also ordered by that confidence.
+- Opening a door unassisted (G11, G35) is included as an option, for example an automatic door or a robot with a door skill. The description only names cooperation with a robot or a human, so remove it if it doesn't apply.
+
+---
+
+## 1. Goals
+
+### 1.1 Root and meal delivery branch
+
+| Name | Text | Runtime | Goal Type | Target Condition / Enquired Information | Relation | Justification |
+|---|---|---|---|---|---|---|
+| **G1: Manage food service** | Deliver meals from the kitchen to inpatient rooms and retrieve dirty dishes. | `(G2 # G27)` | Perform | n/a | AND | Ongoing service. It succeeds when its activities (delivery and retrieval) are performed, and no single end state defines it. |
+| **G2: Deliver meal order** | Deliver one kitchen-requested meal order to the inpatient's room. | `G3 ; (G4 # G8) ; G14 ; G26` | Achieve | `order.status = delivered` (meal on room table or retrieved by the right person, and kitchen notified) | AND | Delivery is order-by-order and has a clear target state. Assessing capability (G4) overlaps with travel (G8). |
+| **G3: Load meal order** | Pick up the ordered meal at the kitchen and place it on the tray. | - | Achieve | `meal ∈ robot.tray` | AND | Loading is complete only when the meal is on the tray. The robot can carry multiple meals. |
+| **G4: Assess retrieval capability** | Find out who in the room could take the meal from the tray. | `(G5 # G6 # G7)` | Query | Enquired information: `{inpatient_can_retrieve, companion_present_and_able, nurse_available}`, each with a confidence level | AND | The description says this information is obtained from records and is uncertain. It returns information and needs no world-state change. |
+| **G5: Check inpatient ability** | Read the inpatient record to see if the patient can fetch food from the tray. | - | Query | Enquired information: `inpatient_can_retrieve` and its confidence | AND | It only retrieves data from the record. |
+| **G6: Check companion presence** | Determine if a companion is in the room and able to help. | - | Query | Enquired information: `companion_present_and_able` and its confidence | AND | Same reasoning: the answer comes from the record and room information. |
+| **G7: Check nurse availability** | Determine if a nurse can attend the delivery now. | - | Query | Enquired information: `nurse_available` and its confidence | AND | It only retrieves availability information. |
+| **G8: Reach inpatient room** | Move to the room and get inside. | `G9 ; G10` | Achieve | `robot_at(inpatient_room) ∧ door_open` | AND | The state "robot inside the room" is clearly defined. |
+| **G9: Navigate to room door** | Travel from the kitchen to the room door. | - | Achieve | `robot_at(room_door)` | AND | Defined by a target position. |
+| **G10: Open room door** | Get the door opened, alone or with cooperation. | `FALLBACK(G11, FALLBACK(G12, G13))` | Achieve | `door_open = true` | OR | Any one means is enough. Order: alone, then another robot, then a human. |
+| **G11: Open door unassisted** | The robot opens the door itself. | - | Achieve | `door_open = true` | AND | It must produce the open state, otherwise the fallback would not trigger. |
+| **G12: Open door with robot** | Open the door with another robot's help. | - | Achieve | `door_open = true` | AND | Same reasoning. |
+| **G13: Open door with human** | Ask a nearby human to open the door. | - | Achieve | `door_open = true` | AND | Same reasoning. |
+| **G14: Hand over meal** | Make the meal available to the inpatient, on the table or from the tray. | `FALLBACK(G15, G16)` | Achieve | `meal_delivered(order) = true` | OR | Table delivery or tray retrieval is enough. Table delivery is tried first because it needs no human cooperation. |
+| **G15: Place meal on table** | Place the meal on the room table using the manipulation skill. | - | Achieve | `meal ∈ room.table` | AND | Defined by the meal's final position. It fails if the robot lacks the skill, which triggers the fallback. |
+| **G16: Deliver via tray retrieval** | Let a person or another robot take the meal from the tray. | `G17 ; (G18 # G23)` | Achieve | `meal ∉ robot.tray ∧ retrieved_by ∈ authorized_retrievers` | AND | The target state is that the right party has removed the meal. |
+| **G17: Indicate meal to retrieve** | Signal which meal (tray slot) belongs to this inpatient. | - | Perform | n/a | AND | The outcome is the signaling activity itself. Whether the person understands it is not verifiable here. |
+| **G18: Obtain tray retrieval** | Get one cooperating agent to retrieve the meal. | `FALLBACK(G19, FALLBACK(G20, FALLBACK(G21, G22)))` | Achieve | `meal ∉ robot.tray` | OR | Any one retriever is sufficient. The order follows the G4 confidence values. |
+| **G19: Inpatient retrieves** | The inpatient takes the meal from the tray. | - | Achieve | `retrieved_by = inpatient` | AND | Defined by who retrieved the meal. |
+| **G20: Companion retrieves** | A companion takes the meal from the tray. | - | Achieve | `retrieved_by = companion` | AND | Same reasoning. |
+| **G21: Nurse retrieves** | A nurse takes the meal from the tray. | - | Achieve | `retrieved_by = nurse` | AND | Same reasoning. |
+| **G22: Robot retrieves** | Another robot takes the meal and places it on the table. | - | Achieve | `retrieved_by = other_robot ∧ meal ∈ room.table` | AND | Same reasoning. |
+| **G23: Monitor retrieval** | Track retrievals and detect wrong meals. | `(G24 # G25)` | Perform | n/a | AND | These are continuous monitoring activities while retrieval takes place. |
+| **G24: Record retrieval** | Log when and where each meal was retrieved. | - | Achieve | `log ∋ (meal_id, time, location)` | AND | The target is a log entry. |
+| **G25: Alert wrong meal** | Alert if the meal retrieved does not match the inpatient's order. | - | Perform | n/a | AND | The alert is conditional and a wrong retrieval may never occur, so no target state can be guaranteed. Success is that the verification is performed and the alert is raised when needed. |
+| **G26: Close order** | Report the delivery result to the kitchen. | - | Achieve | `kitchen.notified(order)` | AND | Defined by the state of the kitchen system. |
+
+### 1.2 Dish retrieval branch
+
+| Name | Text | Runtime | Goal Type | Target Condition / Enquired Information | Relation | Justification |
+|---|---|---|---|---|---|---|
+| **G27: Retrieve dirty dishes** | Take dirty dishes from a room back to the kitchen. | `G28 ; G31 ; G38 ; G42` | Achieve | `dishes(room) ∈ dish_return_area` | AND | Defined by the final location of the dishes. |
+| **G28: Identify pickup request** | Find which room needs pickup and if the requester can open the door. | `(G29 # G30)` | Query | Enquired information: `{room_id, request_source, caller_can_open_door}` | OR | Either a scheduled need or a room call is enough, so both are monitored in parallel. It only retrieves information. |
+| **G29: Check scheduled pickups** | Find rooms whose meal is finished. | - | Query | Enquired information: `room_id` of finished meals | AND | Data retrieval only. |
+| **G30: Receive room call** | Receive a call from someone in the room, with their door-opening signal. | - | Query | Enquired information: `room_id`, `caller_can_open_door` | AND | Data retrieval only. |
+| **G31: Reach room for pickup** | Move to the room and get inside. | `G32 ; G33` | Achieve | `robot_at(inpatient_room) ∧ door_open` | AND | Defined by position and door state. |
+| **G32: Navigate to room door** | Travel to the room door. | - | Achieve | `robot_at(room_door)` | AND | Defined by position. |
+| **G33: Open room door (pickup)** | Get the door opened, using the caller's signal when available. | `FALLBACK(G34, FALLBACK(G35, FALLBACK(G36, G37)))` | Achieve | `door_open = true` | OR | Any means is enough. G34 applies only if `caller_can_open_door = true`, otherwise it fails immediately. |
+| **G34: Caller opens door** | The person who called opens the door. | - | Achieve | `door_open = true` | AND | Defined by the door state. |
+| **G35: Open door unassisted** | The robot opens the door itself. | - | Achieve | `door_open = true` | AND | Same reasoning. |
+| **G36: Open door with robot** | Another robot helps open the door. | - | Achieve | `door_open = true` | AND | Same reasoning. |
+| **G37: Open door with staff** | Ask another human to open the door. | - | Achieve | `door_open = true` | AND | Same reasoning. |
+| **G38: Collect dirty dishes** | Load the dishes onto the robot. | `FALLBACK(G39, FALLBACK(G40, G41))` | Achieve | `dishes ∈ robot.tray` | OR | The description allows unassisted, two-robot or robot-plus-human collection. Any one is enough. |
+| **G39: Collect unassisted** | One robot collects the dishes. | - | Achieve | `dishes ∈ robot.tray` | AND | Defined by dish location. |
+| **G40: Collect with two robots** | Two robots collect the dishes together. | - | Achieve | `dishes ∈ robot.tray` | AND | Same reasoning. |
+| **G41: Collect with human** | Robots and a human collect the dishes. | - | Achieve | `dishes ∈ robot.tray` | AND | Same reasoning. |
+| **G42: Return dishes to kitchen** | Bring the dishes to the dish return area. | - | Achieve | `dishes ∈ dish_return_area` | AND | Defined by final location. |
+
+---
+
+## 2. Tasks
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| **AT1: Go to kitchen** | Navigate to the kitchen pickup point. | AND (G3) | `kitchen` | 1 |
+| **AT2: Load meal on tray** | Load the ordered meal into a tray slot and register the slot. | AND (G3) | `kitchen` | 1 |
+| **AT3: Consult inpatient record** | Read the patient record to assess ability to fetch food. | AND (G5) | `hospital_info_system` | 1 |
+| **AT4: Consult companion presence** | Read the record and room information for a companion. | AND (G6) | `hospital_info_system` | 1 |
+| **AT5: Query nurse availability** | Query the nurse assignment system. | AND (G7) | `hospital_info_system` | 1 |
+| **AT6: Navigate to room door** | Drive to the target room's door. | AND (G9) | `room_door` | 1 |
+| **AT7: Open door alone** | Actuate the door without help. | AND (G11) | `room_door` | 1 |
+| **AT8: Open door with robot** | Coordinate with another robot to open the door. | AND (G12) | `room_door` | 2 |
+| **AT9: Request human to open door** | Call a nearby human and wait for the door to open. | AND (G13) | `room_door` | 1 |
+| **AT10: Place meal on table** | Move the meal from the tray to the room table with the manipulation skill. | AND (G15) | `inpatient_room` | 1 (with manipulation skill) |
+| **AT11: Announce meal** | Show and say the patient and tray slot to retrieve. | AND (G17) | `inpatient_room` | 1 |
+| **AT12: Offer tray to inpatient** | Position near the inpatient and wait for retrieval. | AND (G19) | `inpatient_room` | 1 |
+| **AT13: Offer tray to companion** | Ask the companion to retrieve the meal and wait. | AND (G20) | `inpatient_room` | 1 |
+| **AT14: Call nurse and offer tray** | Request the nurse to come and wait for retrieval. | AND (G21) | `inpatient_room` | 1 |
+| **AT15: Transfer meal to robot** | Let another robot take the meal from the tray and place it on the table. | AND (G22) | `inpatient_room` | 2 |
+| **AT16: Detect retrieval event** | Detect that a meal has left the tray. | AND (G24) | `inpatient_room` | 1 |
+| **AT17: Log time and location** | Store meal ID, time, place and retriever. | AND (G24) | `inpatient_room` | 1 |
+| **AT18: Verify meal identity** | Compare the retrieved meal to the inpatient's order. | AND (G25) | `inpatient_room` | 1 |
+| **AT19: Raise wrong-meal alert** | If they differ, alert the retriever and staff. | AND (G25) | `inpatient_room` | 1 |
+| **AT20: Report delivery status** | Send the delivery outcome to the kitchen. | AND (G26) | `hospital_info_system` | 1 |
+| **AT21: Read pickup schedule** | Check rooms with finished meals. | AND (G29) | `hospital_info_system` | 1 |
+| **AT22: Receive room call** | Receive the call and the caller's door signal. | AND (G30) | `inpatient_room` | 1 |
+| **AT23: Navigate to room door** | Drive to the room door for pickup. | AND (G32) | `room_door` | 1 |
+| **AT24: Request caller to open door** | Ask the caller to open the door on arrival. | AND (G34) | `room_door` | 1 |
+| **AT25: Open door alone** | Actuate the door without help. | AND (G35) | `room_door` | 1 |
+| **AT26: Open door with robot** | Coordinate with another robot to open the door. | AND (G36) | `room_door` | 2 |
+| **AT27: Request staff to open door** | Call staff and wait for the door to open. | AND (G37) | `room_door` | 1 |
+| **AT28: Pick dishes alone** | Move dishes from the room table to the tray. | AND (G39) | `inpatient_room` | 1 (with manipulation skill) |
+| **AT29: Collect dishes with two robots** | Two robots move dishes to the tray. | AND (G40) | `inpatient_room` | 2 |
+| **AT30: Collect dishes with human help** | A human places dishes on the tray with robot support. | AND (G41) | `inpatient_room` | [1,2] |
+| **AT31: Navigate to dish return** | Drive to the dish return area. | AND (G42) | `dish_return_area` | 1 |
+| **AT32: Unload dishes** | Unload the dishes at the dish return area. | AND (G42) | `dish_return_area` | 1 |
+
+**Variables monitored by the parent goal**
+
+| Goal | Monitored variables |
+|---|---|
+| G2 | `order`, `order.status`, `meal_slot`, G4 outputs |
+| G3 | `kitchen`, `robot.tray` |
+| G5, G6, G7 | `hospital_info_system` |
+| G9, G10, G11, G12, G13 | `room_door`, `door_open` |
+| G15 | `inpatient_room`, `room.table` |
+| G17 | `inpatient_room`, `meal_slot` |
+| G19, G20, G21, G22 | `inpatient_room`, `retrieved_by` |
+| G24, G25 | `inpatient_room`, `retrieval_log`, `order` |
+| G26 | `hospital_info_system` |
+| G29, G30 | `hospital_info_system`, `inpatient_room`, `caller_can_open_door` |
+| G32, G33, G34, G35, G36, G37 | `room_door`, `door_open` |
+| G39, G40, G41 | `inpatient_room`, `robot.tray` |
+| G42 | `dish_return_area`, `robot.tray` |
+
+---
+
+## 3. Summary
+
+| Node | Kind | Runtime | Relation | Children |
+|---|---|---|---|---|
+| G1 | Goal | `(G2 # G27)` | AND | G2, G27 |
+| G2 | Goal | `G3 ; (G4 # G8) ; G14 ; G26` | AND | G3, G4, G8, G14, G26 |
+| G3 | Goal (leaf) | - | AND | AT1, AT2 |
+| G4 | Goal | `(G5 # G6 # G7)` | AND | G5, G6, G7 |
+| G5 | Goal (leaf) | - | AND | AT3 |
+| G6 | Goal (leaf) | - | AND | AT4 |
+| G7 | Goal (leaf) | - | AND | AT5 |
+| G8 | Goal | `G9 ; G10` | AND | G9, G10 |
+| G9 | Goal (leaf) | - | AND | AT6 |
+| G10 | Goal | `FALLBACK(G11, FALLBACK(G12, G13))` | OR | G11, G12, G13 |
+| G11 | Goal (leaf) | - | AND | AT7 |
+| G12 | Goal (leaf) | - | AND | AT8 |
+| G13 | Goal (leaf) | - | AND | AT9 |
+| G14 | Goal | `FALLBACK(G15, G16)` | OR | G15, G16 |
+| G15 | Goal (leaf) | - | AND | AT10 |
+| G16 | Goal | `G17 ; (G18 # G23)` | AND | G17, G18, G23 |
+| G17 | Goal (leaf) | - | AND | AT11 |
+| G18 | Goal | `FALLBACK(G19, FALLBACK(G20, FALLBACK(G21, G22)))` | OR | G19, G20, G21, G22 |
+| G19 | Goal (leaf) | - | AND | AT12 |
+| G20 | Goal (leaf) | - | AND | AT13 |
+| G21 | Goal (leaf) | - | AND | AT14 |
+| G22 | Goal (leaf) | - | AND | AT15 |
+| G23 | Goal | `(G24 # G25)` | AND | G24, G25 |
+| G24 | Goal (leaf) | - | AND | AT16, AT17 |
+| G25 | Goal (leaf) | - | AND | AT18, AT19 |
+| G26 | Goal (leaf) | - | AND | AT20 |
+| G27 | Goal | `G28 ; G31 ; G38 ; G42` | AND | G28, G31, G38, G42 |
+| G28 | Goal | `(G29 # G30)` | OR | G29, G30 |
+| G29 | Goal (leaf) | - | AND | AT21 |
+| G30 | Goal (leaf) | - | AND | AT22 |
+| G31 | Goal | `G32 ; G33` | AND | G32, G33 |
+| G32 | Goal (leaf) | - | AND | AT23 |
+| G33 | Goal | `FALLBACK(G34, FALLBACK(G35, FALLBACK(G36, G37)))` | OR | G34, G35, G36, G37 |
+| G34 | Goal (leaf) | - | AND | AT24 |
+| G35 | Goal (leaf) | - | AND | AT25 |
+| G36 | Goal (leaf) | - | AND | AT26 |
+| G37 | Goal (leaf) | - | AND | AT27 |
+| G38 | Goal | `FALLBACK(G39, FALLBACK(G40, G41))` | OR | G39, G40, G41 |
+| G39 | Goal (leaf) | - | AND | AT28 |
+| G40 | Goal (leaf) | - | AND | AT29 |
+| G41 | Goal (leaf) | - | AND | AT30 |
+| G42 | Goal (leaf) | - | AND | AT31, AT32 |
+
+---
+
+## 4. Logical relationships
+
+**Goal to goal**
+- **G1 -> G2, G27 [AND][(parallel)]**
+- **G2 -> G3, G4, G8, G14, G26 [AND][(sequential) `G3 ; (G4 # G8) ; G14 ; G26`]**
+- **G4 -> G5, G6, G7 [AND][(parallel)]**
+- **G8 -> G9, G10 [AND][(sequential)]**
+- **G10 -> G11, G12, G13 [OR][FALLBACK(G11, FALLBACK(G12, G13))]**
+- **G14 -> G15, G16 [OR][FALLBACK(G15, G16)]**
+- **G16 -> G17, G18, G23 [AND][(sequential) `G17 ; (G18 # G23)`]**
+- **G18 -> G19, G20, G21, G22 [OR][FALLBACK(G19, FALLBACK(G20, FALLBACK(G21, G22)))]**
+- **G23 -> G24, G25 [AND][(parallel)]**
+- **G27 -> G28, G31, G38, G42 [AND][(sequential)]**
+- **G28 -> G29, G30 [OR][(parallel)]**
+- **G31 -> G32, G33 [AND][(sequential)]**
+- **G33 -> G34, G35, G36, G37 [OR][FALLBACK(G34, FALLBACK(G35, FALLBACK(G36, G37)))]**
+- **G38 -> G39, G40, G41 [OR][FALLBACK(G39, FALLBACK(G40, G41))]**
+
+**Goal to task**
+- **G3 -> AT1, AT2 [AND]**
+- **G5 -> AT3 [AND]**, **G6 -> AT4 [AND]**, **G7 -> AT5 [AND]**
+- **G9 -> AT6 [AND]**
+- **G11 -> AT7 [AND]**, **G12 -> AT8 [AND]**, **G13 -> AT9 [AND]**
+- **G15 -> AT10 [AND]**
+- **G17 -> AT11 [AND]**
+- **G19 -> AT12 [AND]**, **G20 -> AT13 [AND]**, **G21 -> AT14 [AND]**, **G22 -> AT15 [AND]**
+- **G24 -> AT16, AT17 [AND]**
+- **G25 -> AT18, AT19 [AND]**
+- **G26 -> AT20 [AND]**
+- **G29 -> AT21 [AND]**, **G30 -> AT22 [AND]**
+- **G32 -> AT23 [AND]**
+- **G34 -> AT24 [AND]**, **G35 -> AT25 [AND]**, **G36 -> AT26 [AND]**, **G37 -> AT27 [AND]**
+- **G39 -> AT28 [AND]**, **G40 -> AT29 [AND]**, **G41 -> AT30 [AND]**
+- **G42 -> AT31, AT32 [AND]**
+
+The door-opening and collection alternatives are written out separately for delivery and pickup. This keeps the model a strict tree, and it lets the pickup branch use the caller's door signal through G34.
