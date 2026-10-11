@@ -1,189 +1,272 @@
-O texto anexado solicita a decomposição de uma missão de sistema multi-robô em um modelo de objetivos. A descrição exige identificar objetivos, subobjetivos, tarefas, relações AND/OR, execução paralela/sequencial/fallback e justificativas. :chatgpt-content-reference{index="0"}
+Based on the mission text, I treat the model as a **tree of goals and operational tasks**, using AND/OR decompositions and runtime annotations such as sequence `;`, parallel `#`, and `FALLBACK(...)` as defined in the prompt. The mission requires periodic vital-sign checks in occupied rooms, pre-entry availability and battery checks, condition-specific measurements, failure handling, hygiene actions, robot reassignment, and escalation when no robot combination can complete the mission. :chatgpt-content-reference{index="0"} The goal-model structure follows the provided definition of hierarchical goal decomposition with AND/OR relations. :chatgpt-content-reference{index="1"}
 
-Não apresento meu raciocínio privado passo a passo, mas apresento a **análise estruturada e as justificativas do modelo**, que são suficientes para construir o goal model conforme solicitado.
+I cannot expose private chain-of-thought, but I provide an auditable decomposition rationale for each goal, task, and relationship.
 
-# Goal Model — Hospital Multi-Robot Vital Signs Mission
+## Modeling notes
 
-## G1 — Execute Patient Monitoring Mission
-
-| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
-|---|---|---|---|---|---|---|
-| G1: Execute Patient Monitoring Mission | Ensure that all required patients have their vital signs checked according to mission constraints. | G2;G3;G4;G5;G6 | Achieve | All required patient monitoring activities are completed within mission constraints. | AND | The mission requires visiting rooms, checking patients, collecting vital signs, handling failures, and ensuring safety procedures. All these objectives are necessary together. The mission states that every two hours all patient's vital signs should be checked. :chatgpt-content-reference{index="1"} |
-
----
-
-# G2 — Visit Occupied Hospital Rooms
-
-| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
-|---|---|---|---|---|---|---|
-| G2: Visit Occupied Hospital Rooms | Ensure that the robot visits every occupied room containing patients. | G2.1;G2.2;G2.3 | Achieve | Every occupied hospital room has been visited. | AND | The mission explicitly requires the assigned robot to visit every occupied room. :chatgpt-content-reference{index="2"} |
-
-### Subgoals
-
-| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
-|---|---|---|---|---|---|---|
-| G2.1: Check Patient Availability | Determine whether the patient can receive vital sign checking. | - | Query | QueriedProperty: Patient availability status | - | The robot must verify patient availability before entering the room. :chatgpt-content-reference{index="3"} |
-| G2.2: Check Robot Battery Availability | Ensure enough battery exists to perform tasks in the room. | - | Query | QueriedProperty: Robot battery level | - | Battery verification is explicitly required before entering the room. :chatgpt-content-reference{index="4"} |
-| G2.3: Perform Room Visit | Complete navigation and patient identification inside the room. | AT1;AT2 | Perform | - | AND | Visiting requires entering the room and identifying the correct patient. |
+1. **FALLBACK is used only where the mission explicitly defines a first attempt and a recovery action**, such as “if patient is not available, come back in 5 minutes,” “if battery is insufficient, recharge and reassign,” and “if no combination of robots can complete the mission, alert the manager.” This follows the fallback definition in the prompt. :chatgpt-content-reference{index="2"}  
+2. **OR is used for true alternatives**, especially identifying the patient either by asking or by scanning the barcode. The description does not specify which option must be tried first, so I do not model that as FALLBACK.  
+3. **Parallel `#` is used for independent checks or measurements** when the mission does not impose a strict order, such as availability and battery verification before entry, or condition-specific vital-sign checks.  
+4. **Sequential `;` is used where the mission implies order**, such as checking prerequisites before entering, entering before approaching the patient, and marking the patient as done before proceeding to the next room.
 
 ---
 
-# Tasks of G2
+# Goal Nodes Table
+
+| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
+|---|---|---:|---|---|---|---|
+| **G1: Resolve Vital-Signs Mission** | Ensure the periodic two-hour vital-signs mission is completed or formally escalated if impossible. | `FALLBACK(G2,G25)` | Achieve | `mission_completed_or_escalated` | Root | The mission says all occupied rooms must be visited every two hours, and if no combination of robots can complete the mission, the responsible manager must be alerted. :chatgpt-content-reference{index="3"} |
+| **G2: Complete Mission Within Time** | Complete the assigned vital-signs mission within the required timing constraints. | `G3;G6` | Achieve | `occupied_rooms_checked_within_two_hours_and_high_risk_checked_first_15_minutes` | AND | Feasible robot allocation must be established before executing room checks. The two-hour cycle and first-15-minute high-risk constraint are explicit in the mission. |
+| **G3: Ensure Feasible Robot Allocation** | Determine whether the assigned robot can complete the mission, otherwise allocate additional robots. | `FALLBACK(G4,G5)` | Achieve | `sufficient_robot_capacity_assigned` | AND | The assigned robot is the primary performer, but additional robots can be assigned if the mission cannot be performed in the required time. |
+| **G4: Use Assigned Robot** | Check whether the assigned robot can perform the mission within the required time. | `AT1` | Query | `assigned_robot_can_complete_required_time` | AND | The mission starts from the assigned robot visiting every occupied room, so feasibility of this primary assignment must be known. |
+| **G5: Assign Additional Robot Support** | Assign additional robots when the mission cannot be completed by the assigned robot alone. | `AT2;AT3` | Achieve | `additional_robot_support_assigned` | AND | The description explicitly permits additional robots when performing the mission in the required time is impossible. |
+| **G6: Check All Occupied Rooms** | Visit and process every occupied room according to the prioritized route. | `G7;G8` | Achieve | `every_occupied_room_processed` | AND | The robot must visit every occupied room, while high-risk patients must be checked during the first 15 minutes. |
+| **G7: Enforce High-Risk Priority** | Ensure high-risk patients are placed first in the mission route. | `AT4;AT5` | Achieve | `high_risk_patients_scheduled_for_first_15_minutes` | AND | The mission states that all high-risk patients must be checked in the first 15 minutes. |
+| **G8: Process Each Occupied Room** | Execute the full room-level workflow for each occupied room. | `G9;G13;G14;G15;G21;G24` | Achieve | `room_checked_and_robot_ready_for_next_room` | AND | The room workflow requires pre-entry checks, patient identification, communication, vital-sign collection, hygiene handling, and marking the patient as done. |
+| **G9: Satisfy Room-Entry Preconditions** | Before entering the room, verify patient availability and battery sufficiency. | `G10#G11` | Achieve | `entry_preconditions_satisfied` | AND | The mission says the robot must check both patient availability and battery before entering the room. These checks are independent and can be evaluated in parallel. |
+| **G10: Ensure Patient Available** | Confirm that the patient is available; otherwise return after five minutes. | `FALLBACK(AT6,AT7)` | Achieve | `patient_available_for_checking` | AND | The mission explicitly says that if the patient is not available, the robot should come back in five minutes. |
+| **G11: Ensure Battery Sufficient** | Confirm that the robot has enough battery to perform all tasks inside the room. | `FALLBACK(AT8,G12)` | Achieve | `battery_sufficient_or_recovery_started` | AND | The mission states that if battery is insufficient, the robot must recharge and tasks need to be reassigned. |
+| **G12: Recover From Insufficient Battery** | Recharge the robot and reassign pending tasks. | `AT9;AT10` | Achieve | `robot_recharged_and_tasks_reassigned` | AND | Recharge must occur before reassignment can continue safely. |
+| **G13: Identify Correct Patient** | Identify the correct patient in rooms with one or more beds. | `OR-no-order(AT11,AT12)` | Query | `correct_patient_identity` | OR | The mission says the robot identifies the patient either by asking or by scanning the patient barcode. No first/second order is specified, so this is OR rather than FALLBACK. |
+| **G14: Communicate Procedure** | Approach the patient, announce the procedure, and provide instructions. | `AT13;AT14;AT15` | Perform | `procedure_communication_performed` | AND | Once inside the room, the robot must approach the patient, announce the procedure, and provide instructions. |
+| **G15: Obtain Required Clinical Data** | Collect the required vital signs, or handle collection failure. | `FALLBACK(G16,G20)` | Achieve | `required_vital_data_collected_or_failure_handled` | AND | The mission states that failure to collect necessary signs triggers questions, and non-response triggers an alert. |
+| **G16: Collect Applicable Vital Signs** | Collect all vital signs required by the patient’s condition categories. | `G17#G18#G19` | Achieve | `all_applicable_condition_specific_signs_collected` | AND | The mission defines different required measurements for infectious disease, post-surgical conditions, and diabetes. If multiple categories apply, all applicable checks are required. |
+| **G17: Collect Infectious-Disease Signs** | For infectious-disease patients, check heart rate, blood pressure, body temperature, and blood oxygenation. | `AT16#AT17#AT18#AT19` | Achieve | `infectious_required_signs_collected` | AND | The infectious-disease condition explicitly requires these four vital signs. |
+| **G18: Collect Post-Surgical Signs** | For post-surgical patients, check heart rate and blood oxygenation. | `AT20#AT21` | Achieve | `post_surgical_required_signs_collected` | AND | The post-surgical condition explicitly requires heart rate and blood oxygenation. |
+| **G19: Collect Diabetes Sign** | For patients with diabetes history, check blood glucose level. | `AT22` | Achieve | `diabetes_glucose_level_collected` | AND | The diabetes condition explicitly requires glucose levels in the blood. |
+| **G20: Handle Vital-Sign Collection Failure** | Ask assessment questions for failed signs; alert nurse/doctor if the patient does not respond. | `FALLBACK(AT23,AT24)` | Achieve | `failed_sign_status_assessed_or_alert_sent` | AND | The mission says failed vital-sign collection triggers questions, and non-response triggers an alert to the responsible nurse/doctor. |
+| **G21: Complete Post-Room Hygiene** | Perform required hygiene actions after leaving or contacting a patient. | `G22#G23` | Achieve | `required_hygiene_completed` | AND | Sterilization is required after infectious-disease rooms, and actuator disinfection is required after patient contact. |
+| **G22: Sterilize After Infectious Room** | Sterilize the robot after coming out of a room where an infectious-disease patient is treated. | `AT25` | Perform | `sterilization_performed` | AND | The mission explicitly requires sterilization after leaving such a room. |
+| **G23: Disinfect Actuators After Contact** | Disinfect actuators after duties involving patient contact. | `AT26` | Perform | `actuator_disinfection_performed` | AND | The mission requires actuator disinfection after touching the patient. |
+| **G24: Finalize Patient and Continue** | Mark the patient as done and proceed to the next room. | `AT27;AT28` | Achieve | `patient_marked_done_and_next_room_selected` | AND | The mission says once the patient is checked, the robot should mark it as done and proceed to the next room. |
+| **G25: Alert Responsible Manager** | Alert the site manager when no combination of robots can complete the mission. | `AT29` | Perform | `manager_alert_sent` | AND | The mission explicitly says the responsible manager for the site must be alerted if no combination of robots can complete the mission. |
+
+---
+
+# Task Nodes Table
+
+Task nodes are concrete operational actions. The prompt requires each task to include a location and number of robots. :chatgpt-content-reference{index="4"}
 
 | Name | Text | Relation | Location | Number of Robots | Justification |
-|---|---|---|---|---|---|
-| AT1: Navigate To Patient Room | Move the robot to an occupied hospital room. | AND | Hospital room | 1 | The assigned robot must visit every occupied room. :chatgpt-content-reference{index="5"} |
-| AT2: Identify Patient | Identify the correct patient by asking or scanning barcode. | AND | Hospital room | 1 | Rooms may contain multiple beds, requiring patient identification. :chatgpt-content-reference{index="6"} |
-
----
-
-# G3 — Collect Required Vital Signs
-
-| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
-|---|---|---|---|---|---|---|
-| G3: Collect Required Vital Signs | Obtain all vital signs required for each patient's condition. | G3.1#G3.2;G3.3 | Achieve | Required vital signs successfully collected. | AND | Different patient categories require different measurements, and failures must be handled. :chatgpt-content-reference{index="7"} |
-
-### Subgoals
-
-| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
-|---|---|---|---|---|---|---|
-| G3.1: Prepare Patient Interaction | Approach patient, announce procedure, and provide instructions. | - | Perform | - | - | These actions happen before measurement collection. :chatgpt-content-reference{index="8"} |
-| G3.2: Measure Condition-Specific Vital Signs | Collect vital signs according to patient condition. | - | Perform | - | - | Infectious, post-surgical, and diabetic patients have different measurement requirements. :chatgpt-content-reference{index="9"} |
-| G3.3: Handle Measurement Failure | Handle missing vital sign collection results. | AT5;AT6 | Achieve | Patient status evaluated after failed measurement. | AND | Failure requires additional questions and possible alert generation. :chatgpt-content-reference{index="10"} |
-
----
-
-# Tasks of G3
-
-| Name | Text | Relation | Location | Number of Robots | Justification |
-|---|---|---|---|---|---|
-| AT3: Approach Patient And Explain Procedure | Approach patient and provide procedure instructions. | AND | Hospital room | 1 | The robot must approach and explain the procedure before checking vital signs. :chatgpt-content-reference{index="11"} |
-| AT4: Collect Vital Measurements | Measure required vital signs. | AND | Hospital room | 1 | Vital measurements are required according to patient condition. :chatgpt-content-reference{index="12"} |
-| AT5: Ask Patient Status Questions | Ask questions related to failed vital sign collection. | AND | Hospital room | 1 | The mission requires questions after failure to collect signs. :chatgpt-content-reference{index="13"} |
-| AT6: Send Medical Alert | Notify responsible nurse/doctor if patient does not respond. | AND | Hospital | 1 | The mission explicitly requires an alert in case of non-response. :chatgpt-content-reference{index="14"} |
-
----
-
-# G4 — Manage Mission Exceptions
-
-| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
-|---|---|---|---|---|---|---|
-| G4: Manage Mission Exceptions | Resolve situations preventing normal mission execution. | FALLBACK(G4.1,G4.2) | Achieve | Mission continues after exception handling. | AND | The mission defines specific alternatives: retry unavailable patients and recharge/reassign when battery is insufficient. These are explicit fallback situations. :chatgpt-content-reference{index="15"} |
-
-### Subgoals
-
-| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
-|---|---|---|---|---|---|---|
-| G4.1: Retry Patient Visit | Return after patient becomes available. | - | Achieve | Patient visit completed after retry. | - | Patient unavailable requires returning after five minutes. :chatgpt-content-reference{index="16"} |
-| G4.2: Recharge And Reassign Tasks | Restore battery and redistribute tasks. | - | Achieve | Robot available with reassigned mission tasks. | - | Insufficient battery requires recharge and task reassignment. :chatgpt-content-reference{index="17"} |
-
----
-
-# G5 — Ensure Robot Safety And Sterilization
-
-| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
-|---|---|---|---|---|---|---|
-| G5: Ensure Robot Safety And Sterilization | Prevent contamination through robot sterilization procedures. | G5.1#G5.2 | Achieve | Robot is sterilized whenever required. | AND | The mission requires sterilization after infectious disease rooms and after patient contact. :chatgpt-content-reference{index="18"} |
-
-### Subgoals
-
-| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
-|---|---|---|---|---|---|---|
-| G5.1: Sterilize After Infectious Room | Decontaminate robot after leaving infectious disease rooms. | - | Perform | - | - | Explicit requirement in mission. :chatgpt-content-reference{index="19"} |
-| G5.2: Disinfect Contact Actuators | Disinfect actuators after touching patients. | - | Perform | - | - | Explicit requirement for patient-contact duties. :chatgpt-content-reference{index="20"} |
-
----
-
-# G6 — Prioritize High Risk Patients And Mission Completion
-
-| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
-|---|---|---|---|---|---|---|
-| G6: Prioritize High Risk Patients And Mission Completion | Ensure high-risk patients are handled on time and mission feasibility is maintained. | G6.1#G6.2 | Achieve | High-risk patients checked within 15 minutes and mission feasibility verified. | AND | The mission requires priority checking and additional robot allocation when necessary. :chatgpt-content-reference{index="21"} |
-
-### Subgoals
-
-| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
-|---|---|---|---|---|---|---|
-| G6.1: Check High Risk Patients Early | Complete high-risk patient checks in first 15 minutes. | - | Achieve | All high-risk patients checked within 15 minutes. | - | Explicit timing constraint. :chatgpt-content-reference{index="22"} |
-| G6.2: Allocate Additional Robots If Needed | Add robots when current resources cannot satisfy mission time. | AT7;AT8 | Achieve | Mission completed within required time. | AND | Additional robots may be assigned when required. :chatgpt-content-reference{index="23"} |
-
----
-
-# Tasks of G6
-
-| Name | Text | Relation | Location | Number of Robots | Justification |
-|---|---|---|---|---|---|
-| AT7: Assign Supporting Robots | Assign additional robots to assist mission execution. | AND | Hospital | [1,2] | Mission explicitly allows additional robots when required. :chatgpt-content-reference{index="24"} |
-| AT8: Alert Responsible Manager | Notify site manager when robot combinations cannot complete mission. | AND | Hospital | 1 | Explicit escalation requirement. :chatgpt-content-reference{index="25"} |
+|---|---|---|---|---:|---|
+| **AT1: Evaluate Assigned-Robot Feasibility** | Determine whether the assigned robot can complete all required room checks within the required time. | AND | hospital | 1 | The mission begins with the assigned robot visiting occupied rooms; one assigned robot is the primary performer. |
+| **AT2: Evaluate Robot Combinations** | Determine whether additional robot combinations can complete the mission in time. | AND | hospital | 1 | Needed because the mission says additional robots may help, and manager alert is required only if no combination can complete the mission. |
+| **AT3: Assign Additional Robots** | Assign additional robots to help execute the mission. | AND | hospital | 2 | At least one helper in addition to the assigned robot is implied by “additional robots.” The exact maximum is not specified in the mission. |
+| **AT4: Identify High-Risk Patients** | Identify which patients are high risk. | AND | hospital | 1 | High-risk patients must be checked in the first 15 minutes, so they must be identified before route execution. |
+| **AT5: Prioritize High-Risk Rooms** | Place high-risk patient rooms at the beginning of the route. | AND | hospital rooms | 1 | Supports the explicit first-15-minute requirement for high-risk patients. |
+| **AT6: Check Patient Availability** | Before entering, check whether the patient is available for vital-sign checking. | AND | room | 1 | The mission explicitly requires this check before entering the room. |
+| **AT7: Return After Five Minutes** | If the patient is unavailable, come back to the room after five minutes. | AND | room | 1 | The description explicitly gives this recovery action. |
+| **AT8: Check Battery Sufficiency** | Before entering, check whether the robot has enough battery for all tasks inside the room. | AND | room | 1 | The mission explicitly requires this battery check before entering. |
+| **AT9: Recharge Robot** | Recharge the robot if battery is insufficient. | AND | hospital | 1 | The mission says the robot should recharge when battery is insufficient. |
+| **AT10: Reassign Pending Tasks** | Reassign tasks that cannot be completed by the recharging robot. | AND | hospital | 1 | The mission says tasks need to be reassigned when battery is insufficient. |
+| **AT11: Ask Patient Identity** | Identify the correct patient by asking. | OR | room | 1 | The mission gives asking as one valid identification alternative. |
+| **AT12: Scan Patient Barcode** | Identify the correct patient by scanning the patient’s barcode. | OR | room | 1 | The mission gives barcode scanning as another valid identification alternative. |
+| **AT13: Approach Patient** | Approach the patient once inside the room. | AND | room | 1 | The mission says the robot should approach the patient. |
+| **AT14: Announce Procedure** | Announce the vital-sign procedure to be performed. | AND | room | 1 | The mission explicitly requires announcing the procedure. |
+| **AT15: Provide Instructions** | Provide instructions to the patient. | AND | room | 1 | The mission explicitly requires instructions before/during the procedure. |
+| **AT16: Check Infectious Heart Rate** | Check heart rate for an infectious-disease patient. | AND | room | 1 | Infectious-disease patients must be checked for heart rate. |
+| **AT17: Check Infectious Blood Pressure** | Check blood pressure for an infectious-disease patient. | AND | room | 1 | Infectious-disease patients must be checked for blood pressure. |
+| **AT18: Check Infectious Temperature** | Check body temperature for an infectious-disease patient. | AND | room | 1 | Infectious-disease patients must be checked for body temperature. |
+| **AT19: Check Infectious Oxygenation** | Check blood oxygenation for an infectious-disease patient. | AND | room | 1 | Infectious-disease patients must be checked for blood oxygenation. |
+| **AT20: Check Post-Surgical Heart Rate** | Check heart rate for a post-surgical patient. | AND | room | 1 | Post-surgical patients must be checked for heart rate. |
+| **AT21: Check Post-Surgical Oxygenation** | Check blood oxygenation for a post-surgical patient. | AND | room | 1 | Post-surgical patients must be checked for blood oxygenation. |
+| **AT22: Check Blood Glucose** | Check blood glucose level for a patient with a history of diabetes. | AND | room | 1 | Diabetes-history patients must be checked for glucose level in the blood. |
+| **AT23: Ask Failure-Assessment Questions** | Ask a set of questions to assess patient status for any vital signs that failed to be collected. | AND | room | 1 | The mission explicitly requires questions when necessary vital signs cannot be collected. |
+| **AT24: Alert Nurse/Doctor** | Send an alert to the responsible nurse/doctor if the patient does not respond. | AND | room | 1 | The mission explicitly requires this alert in case of non-response. |
+| **AT25: Sterilize Robot** | Sterilize the robot after leaving a room where an infectious-disease patient is treated. | AND | hospital rooms | 1 | The mission explicitly requires sterilization after coming out of such a room. |
+| **AT26: Disinfect Actuators** | Disinfect robot actuators after duties involving patient contact. | AND | room | 1 | The mission explicitly requires actuator disinfection after touching the patient. |
+| **AT27: Mark Patient Done** | Mark the checked patient as done. | AND | room | 1 | The mission says the robot should mark the patient as done after checking. |
+| **AT28: Proceed to Next Room** | Move on to the next room in the route. | AND | hospital rooms | 1 | The mission says the robot should proceed to the next room after completing a patient check. |
+| **AT29: Alert Site Manager** | Alert the responsible manager for the site that no robot combination can complete the mission. | AND | site | 1 | The mission explicitly requires manager notification when no robot combination can complete the mission. |
 
 ---
 
 # Summary Table
 
-| ID | Type | Objective |
-|---|---|---|
-| G1 | Goal | Execute patient monitoring mission |
-| G2 | Goal | Visit occupied hospital rooms |
-| AT1 | Task | Navigate to patient room |
-| AT2 | Task | Identify patient |
-| G3 | Goal | Collect required vital signs |
-| AT3 | Task | Explain procedure |
-| AT4 | Task | Collect measurements |
-| AT5 | Task | Ask status questions |
-| AT6 | Task | Send medical alert |
-| G4 | Goal | Manage mission exceptions |
-| AT7 | Task | Assign additional robots |
-| AT8 | Task | Alert responsible manager |
-| G5 | Goal | Ensure sterilization |
-| G6 | Goal | Prioritize high-risk patients |
+| Parent | Children | Relation | Runtime / Execution Meaning |
+|---|---|---|---|
+| G1 | G2, G25 | AND | `FALLBACK(G2,G25)` — try mission completion; if impossible, alert manager. |
+| G2 | G3, G6 | AND | `G3;G6` — allocate feasible robots before checking rooms. |
+| G3 | G4, G5 | AND | `FALLBACK(G4,G5)` — use assigned robot first; if not feasible, assign additional robots. |
+| G4 | AT1 | AND | Evaluate assigned robot feasibility. |
+| G5 | AT2, AT3 | AND | Evaluate robot combinations, then assign additional robots. |
+| G6 | G7, G8 | AND | `G7;G8` — prioritize high-risk patients before executing the room route. |
+| G7 | AT4, AT5 | AND | Identify high-risk patients, then prioritize their rooms. |
+| G8 | G9, G13, G14, G15, G21, G24 | AND | Execute full room workflow in sequence. |
+| G9 | G10, G11 | AND | `G10#G11` — availability and battery checks can be done independently before entry. |
+| G10 | AT6, AT7 | AND | `FALLBACK(AT6,AT7)` — check availability; if unavailable, return in five minutes. |
+| G11 | AT8, G12 | AND | `FALLBACK(AT8,G12)` — check battery; if insufficient, recover. |
+| G12 | AT9, AT10 | AND | Recharge, then reassign tasks. |
+| G13 | AT11, AT12 | OR | Identify patient either by asking or scanning barcode. |
+| G14 | AT13, AT14, AT15 | AND | Approach, announce, and instruct patient. |
+| G15 | G16, G20 | AND | `FALLBACK(G16,G20)` — collect signs; if collection fails, handle failure. |
+| G16 | G17, G18, G19 | AND | Collect all applicable condition-specific signs. |
+| G17 | AT16, AT17, AT18, AT19 | AND | Infectious-disease vital signs. |
+| G18 | AT20, AT21 | AND | Post-surgical vital signs. |
+| G19 | AT22 | AND | Diabetes-related glucose check. |
+| G20 | AT23, AT24 | AND | `FALLBACK(AT23,AT24)` — ask questions; if no response, alert nurse/doctor. |
+| G21 | G22, G23 | AND | Perform required hygiene actions after room/patient contact. |
+| G22 | AT25 | AND | Sterilize robot after infectious-disease room. |
+| G23 | AT26 | AND | Disinfect actuators after patient contact. |
+| G24 | AT27, AT28 | AND | Mark patient done, then proceed to next room. |
+| G25 | AT29 | AND | Alert site manager if mission cannot be completed. |
 
 ---
 
-# Logical Relationships
+# Logical Relationships and Justifications
 
-### G1 → G2, G3, G4, G5, G6 [AND][Sequential]
+## Mission-level relationships
 
-**Justification:**  
-The complete mission requires all these objectives. The robot must visit rooms, collect measurements, handle exceptions, maintain safety, and respect priority constraints. :chatgpt-content-reference{index="26"}
+**G1 -> G2, G25 [AND][FALLBACK(G2,G25)]**  
+- **Justification**: The mission should first attempt to complete all required checks. The manager alert is only required if no robot combination can complete the mission, making it a fallback escalation.
 
----
+**G2 -> G3, G6 [AND][sequential]**  
+- **Justification**: Robot feasibility and allocation must be resolved before executing room visits. The mission also requires strict time constraints, so allocation affects whether the checks can be completed.
 
-### G2 → G2.1, G2.2, G2.3 [AND][Sequential]
+**G3 -> G4, G5 [AND][FALLBACK(G4,G5)]**  
+- **Justification**: The assigned robot is the primary performer. Additional robots are used only if the assigned robot cannot complete the mission in the required time.
 
-**Justification:**  
-Before entering rooms, the robot must check patient availability and battery, then identify the patient and perform the visit. :chatgpt-content-reference{index="27"}
-
----
-
-### G3 → G3.1, G3.2, G3.3 [AND][Sequential]
-
-**Justification:**  
-Patient interaction precedes measurement, and failure handling occurs after unsuccessful collection. :chatgpt-content-reference{index="28"}
+**G5 -> AT2, AT3 [AND][sequential]**  
+- **Justification**: The system must first evaluate possible robot combinations, then assign additional robots if a viable combination exists.
 
 ---
 
-### G5 → G5.1, G5.2 [AND][Parallel]
+## Room-check ordering relationships
 
-**Justification:**  
-Sterilization after infectious rooms and actuator disinfection after contact are independent safety requirements. :chatgpt-content-reference{index="29"}
+**G6 -> G7, G8 [AND][sequential]**  
+- **Justification**: High-risk timing must be addressed before or during route execution. Since high-risk patients must be checked in the first 15 minutes, the route must prioritize them before the general room workflow proceeds.
 
----
+**G7 -> AT4, AT5 [AND][sequential]**  
+- **Justification**: The robot/system must identify high-risk patients before it can prioritize their rooms in the route.
 
-### G6 → G6.1, G6.2 [AND][Parallel]
-
-**Justification:**  
-Priority checking and resource allocation support mission completion but can be managed independently. :chatgpt-content-reference{index="30"}
-
----
-
-### G3.3 → AT5, AT6 [AND]
-
-**Justification:**  
-After failed measurements, the robot must ask questions and, if there is no response, send an alert. :chatgpt-content-reference{index="31"}
+**G8 -> G9, G13, G14, G15, G21, G24 [AND][sequential]**  
+- **Justification**: The room workflow has a natural order: check preconditions before entry, identify the patient, communicate the procedure, collect data, perform required hygiene, then mark the patient done and continue.
 
 ---
 
-### G6.2 → AT7, AT8 [AND]
+## Pre-entry relationships
 
-**Justification:**  
-Additional robots are assigned when necessary, and failure to achieve feasibility requires notifying the responsible manager. :chatgpt-content-reference{index="32"}
+**G9 -> G10, G11 [AND][parallel]**  
+- **Justification**: Both patient availability and battery sufficiency are mandatory before room entry. The description does not impose an order between them, so they can be evaluated independently.
+
+**G10 -> AT6, AT7 [AND][FALLBACK(AT6,AT7)]**  
+- **Justification**: The robot first checks whether the patient is available. If the patient is not available, the mission explicitly says the robot should come back in five minutes.
+
+**G11 -> AT8, G12 [AND][FALLBACK(AT8,G12)]**  
+- **Justification**: The robot first checks battery sufficiency. If battery is insufficient, the mission explicitly requires recharging and task reassignment.
+
+**G12 -> AT9, AT10 [AND][sequential]**  
+- **Justification**: The robot must recharge, and the unfinished room tasks must then be reassigned so the mission can continue.
+
+---
+
+## Patient identification and communication relationships
+
+**G13 -> AT11, AT12 [OR][no specified order]**  
+- **Justification**: The mission says the robot may identify the patient either by asking or by scanning the barcode. Because the text does not specify which method is first, this is modeled as OR, not FALLBACK.
+
+**G14 -> AT13, AT14, AT15 [AND][sequential]**  
+- **Justification**: Once inside the room, the robot should approach the patient, announce the procedure, and provide instructions. These are complementary required actions.
+
+---
+
+## Vital-sign collection relationships
+
+**G15 -> G16, G20 [AND][FALLBACK(G16,G20)]**  
+- **Justification**: The robot first attempts to collect required vital signs. If any necessary vital sign fails to be collected, the mission requires failure-assessment questions.
+
+**G16 -> G17, G18, G19 [AND][parallel/conditional]**  
+- **Justification**: Required signs depend on patient condition. If a patient belongs to multiple categories, all applicable condition-specific checks must be satisfied.
+
+**G17 -> AT16, AT17, AT18, AT19 [AND][parallel]**  
+- **Justification**: Infectious-disease patients require heart rate, blood pressure, body temperature, and blood oxygenation. All four are mandatory.
+
+**G18 -> AT20, AT21 [AND][parallel]**  
+- **Justification**: Post-surgical patients require heart rate and blood oxygenation. Both are mandatory.
+
+**G19 -> AT22 [AND]**  
+- **Justification**: Patients with diabetes history require blood glucose checking.
+
+**G20 -> AT23, AT24 [AND][FALLBACK(AT23,AT24)]**  
+- **Justification**: The robot first asks assessment questions for failed signs. If the patient does not respond, the mission requires an alert to the responsible nurse/doctor.
+
+---
+
+## Hygiene and completion relationships
+
+**G21 -> G22, G23 [AND][parallel]**  
+- **Justification**: Sterilization and actuator disinfection are both post-room hygiene requirements, triggered by different conditions: infectious-disease room and patient contact.
+
+**G22 -> AT25 [AND]**  
+- **Justification**: The robot must be sterilized after coming out of a room where an infectious-disease patient is treated.
+
+**G23 -> AT26 [AND]**  
+- **Justification**: If the robot touches the patient, its actuators must be disinfected afterward.
+
+**G24 -> AT27, AT28 [AND][sequential]**  
+- **Justification**: The patient must be marked as done before the robot proceeds to the next room.
+
+**G25 -> AT29 [AND]**  
+- **Justification**: If no robot combination can complete the mission, the responsible site manager must be alerted.
+
+---
+
+# Compact Goal Tree
+
+```text
+G1 Resolve Vital-Signs Mission
+├── FALLBACK
+│   ├── G2 Complete Mission Within Time
+│   │   ├── G3 Ensure Feasible Robot Allocation
+│   │   │   ├── G4 Use Assigned Robot
+│   │   │   │   └── AT1 Evaluate Assigned-Robot Feasibility
+│   │   │   └── G5 Assign Additional Robot Support
+│   │   │       ├── AT2 Evaluate Robot Combinations
+│   │   │       └── AT3 Assign Additional Robots
+│   │   └── G6 Check All Occupied Rooms
+│   │       ├── G7 Enforce High-Risk Priority
+│   │       │   ├── AT4 Identify High-Risk Patients
+│   │       │   └── AT5 Prioritize High-Risk Rooms
+│   │       └── G8 Process Each Occupied Room
+│   │           ├── G9 Satisfy Room-Entry Preconditions
+│   │           │   ├── G10 Ensure Patient Available
+│   │           │   │   ├── AT6 Check Patient Availability
+│   │           │   │   └── AT7 Return After Five Minutes
+│   │           │   └── G11 Ensure Battery Sufficient
+│   │           │       ├── AT8 Check Battery Sufficiency
+│   │           │       └── G12 Recover From Insufficient Battery
+│   │           │           ├── AT9 Recharge Robot
+│   │           │           └── AT10 Reassign Pending Tasks
+│   │           ├── G13 Identify Correct Patient
+│   │           │   ├── AT11 Ask Patient Identity
+│   │           │   └── AT12 Scan Patient Barcode
+│   │           ├── G14 Communicate Procedure
+│   │           │   ├── AT13 Approach Patient
+│   │           │   ├── AT14 Announce Procedure
+│   │           │   └── AT15 Provide Instructions
+│   │           ├── G15 Obtain Required Clinical Data
+│   │           │   ├── G16 Collect Applicable Vital Signs
+│   │           │   │   ├── G17 Collect Infectious-Disease Signs
+│   │           │   │   │   ├── AT16 Check Infectious Heart Rate
+│   │           │   │   │   ├── AT17 Check Infectious Blood Pressure
+│   │           │   │   │   ├── AT18 Check Infectious Temperature
+│   │           │   │   │   └── AT19 Check Infectious Oxygenation
+│   │           │   │   ├── G18 Collect Post-Surgical Signs
+│   │           │   │   │   ├── AT20 Check Post-Surgical Heart Rate
+│   │           │   │   │   └── AT21 Check Post-Surgical Oxygenation
+│   │           │   │   └── G19 Collect Diabetes Sign
+│   │           │   │       └── AT22 Check Blood Glucose
+│   │           │   └── G20 Handle Vital-Sign Collection Failure
+│   │           │       ├── AT23 Ask Failure-Assessment Questions
+│   │           │       └── AT24 Alert Nurse/Doctor
+│   │           ├── G21 Complete Post-Room Hygiene
+│   │           │   ├── G22 Sterilize After Infectious Room
+│   │           │   │   └── AT25 Sterilize Robot
+│   │           │   └── G23 Disinfect Actuators After Contact
+│   │           │       └── AT26 Disinfect Actuators
+│   │           └── G24 Finalize Patient and Continue
+│   │               ├── AT27 Mark Patient Done
+│   │               └── AT28 Proceed to Next Room
+│   └── G25 Alert Responsible Manager
+│       └── AT29 Alert Site Manager
+```

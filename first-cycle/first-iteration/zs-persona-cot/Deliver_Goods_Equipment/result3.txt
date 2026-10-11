@@ -1,93 +1,215 @@
-**Goal Model – Multi‑Robot Resource Delivery Mission**
-
-| **Name** | **Text**                             | **Runtime**      | **Goal Type** | **Correct Goal Type** | **Target Condition / Enquired Info** | **Relation** |
-| -------- | ------------------------------------ | ---------------- | ------------- | --------------------- | ------------------------------------ | ------------ |
-| **G1**   | Execute Resource Delivery Mission    | `;` (sequential) | Perform       | Achieve. Target Condition: all resources were delivered.               | –                                    | –            |
-| **G2**   | Collect Resources                    | `;` (sequential) | Perform       | Perform               | –                                    | AND with G1  |
-| **G3**   | Deliver Resources                    | `;` (sequential) | Perform       | Perform               | –                                    | AND with G1  |
-| **G2.4** | Handle Low Battery During Collection | `;` (sequential) | Perform       | Perform               | –                                    | AND with G2  |
-| **G3.3** | Handle Low Battery During Delivery   | `;` (sequential) | Perform       | Perform               | –                                    | AND with G3  |
-| **G3.4** | Handle Delivery Failure              | `-` (leaf)       | Perform       | Perform               | –                                    | AND with G3  |
+Here is a complete goal-model decomposition grounded in the mission description.
 
 
-> **Notes on Goal Types**  
-> All goals are *Perform* goals because the mission consists of concrete actions that must be executed by the robots (navigation, request, transport, battery‑recharging, etc.). No goal simply queries information or seeks a state change that is not action‑based.
+## Source-Based Design Rationale
+
+The mission is modeled as a **multi-robot logistics mission** in which required resources are collected from storage places and delivered to a requesting agent at a specified location. The source explicitly defines a collection phase, a delivery phase, battery-contingency behavior, checkpoint recovery, reporting to a sector manager, and possible parallel robot assignment when items are required from different storages. :chatgpt-content-reference{index="1"}
+
+I use **AND decompositions** when all child goals/tasks are required to satisfy the parent goal, and **OR decomposition** only where alternative strategies are meaningful. The source defines AND as requiring all children and OR as requiring only one child. :chatgpt-content-reference{index="2"} Runtime annotations use sequential `;`, parallel `#`, and `FALLBACK(...)` only when the description explicitly states a first attempt and a failure-handling alternative. :chatgpt-content-reference{index="3"}
 
 ---
 
-### Task Model – Concrete Actions
+## 1. Goal Model Tables
 
-| **Name** | **Text** | **Relation** | **Location** | **Number of Robots** |
-|----------|----------|--------------|--------------|----------------------|
-| **AT1** | Navigate to Storage | AND (child of G2) | `StorageLocation` | 1 |
-| **AT2** | Send Resource Request | AND (child of G2) | `StorageLocation` | 1 |
-| **AT3** | Wait for Resource Retrieval | AND (child of G2) | `StorageLocation` | 1 |
-| **AT4** | Check Battery Level During Collection | AND (child of G2) | `CurrentLocation` | 1 |
-| **AT5** | Navigate to Destination | AND (child of G3) | `DestinationLocation` | 1 |
-| **AT6** | Transport Resource | AND (child of G3) | `DestinationLocation` | 1 |
-| **AT7** | Check Battery Level During Delivery | AND (child of G3) | `CurrentLocation` | 1 |
-| **AT8** | Return to Recharging Station | AND (child of G2.4) | `RechargeStation` | 1 |
-| **AT9** | Assign Task to Another Robot | AND (child of G2.4) | `CentralCommand` | 1 |
-| **AT10** | Return Resource to Checkpoint | AND (child of G3.3) | `Checkpoint` | 1 |
-| **AT11** | Send Alert to Manager | AND (child of G3.4) | `ManagerStation` | 1 |
-
----
-
-### Summary – Unified Goal/Task Table
-
-| **ID** | **Type** | **Description** |
-|--------|----------|-----------------|
-| **G1** | Goal | Execute Resource Delivery Mission |
-| **G2** | Goal | Collect Resources |
-| **AT1** | Task | Navigate to Storage |
-| **AT2** | Task | Send Resource Request |
-| **AT3** | Task | Wait for Resource Retrieval |
-| **AT4** | Task | Check Battery Level During Collection |
-| **G2.4** | Goal | Handle Low Battery During Collection |
-| **AT8** | Task | Return to Recharging Station |
-| **AT9** | Task | Assign Task to Another Robot |
-| **G3** | Goal | Deliver Resources |
-| **AT5** | Task | Navigate to Destination |
-| **AT6** | Task | Transport Resource |
-| **AT7** | Task | Check Battery Level During Delivery |
-| **G3.3** | Goal | Handle Low Battery During Delivery |
-| **AT10** | Task | Return Resource to Checkpoint |
-| **AT9** | Task | Assign Task to Another Robot (shared) |
-| **G3.4** | Goal | Handle Delivery Failure |
-| **AT11** | Task | Send Alert to Manager |
+| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
+|---|---|---:|---|---|---|---|
+| **G1: Fulfill Resource Request** | Ensure that required resources are collected from storage and delivered to the requesting agent at the specified location. | `G2;(G5;G10)#G15#G18` | Achieve | **AchieveCondition:** required resources delivered to the requesting agent at the specified location. | AND | The parent mission requires preparation, collection, delivery, contingency handling, and parallel coordination when applicable. The description states that the robot must collect required resources from storage and deliver them to the requesting agent. :chatgpt-content-reference{index="4"} |
+| **G2: Prepare Mission Execution** | Identify the required resources, destination, storage places, route/order, and robot assignment strategy. | `G3;G4` | Achieve | **AchieveCondition:** mission parameters and execution order are defined before collection starts. | AND | The robot must know which resources are required, where they are located, where they must be delivered, and the order of storage visits before execution. The order is based on waiting time plus path estimation. :chatgpt-content-reference{index="5"} |
+| **G3: Obtain Request Information** | Retrieve information about required resources and the specified delivery location. | `AT1;AT2` | Query | **QueriedProperty:** required resources, requesting agent, specified delivery location. | AND | This is a query goal because its purpose is to obtain information, not directly change the world. The source defines query goals as goals that retrieve information about the world. :chatgpt-content-reference{index="6"} |
+| **G4: Define Collection Order and Assignment** | Determine the order of storage visits and assign the robot or robots to execute the mission. | `AT3;AT4` | Achieve | **AchieveCondition:** storage visit order and robot assignment are established. | AND | The collection order is explicitly defined by estimated waiting time plus the path to be run by the robot. Multiple robots may be assigned when items come from different storages. :chatgpt-content-reference{index="7"} :chatgpt-content-reference{index="8"} |
+| **G5: Collect Required Resources** | Execute the collection phase by going to storage places, requesting resources, and waiting until retrieval. | `G6;G7;G8` | Achieve | **AchieveCondition:** required resources are retrieved from storage. | AND | Collection has a required sequence: go to storage, request resources, wait until resources are retrieved. The delivery phase begins only once resources are retrieved. :chatgpt-content-reference{index="9"} |
+| **G6: Reach Storage Places** | Move to the storage places where required resources can be found. | `AT5` | Achieve | **AchieveCondition:** assigned robot reaches the relevant storage place. | AND | The description states that, in the collection phase, the robot must go to the storage places where the resources can be found. :chatgpt-content-reference{index="10"} |
+| **G7: Request Resources from Storage** | Send a message to the storage with the precise specification of the requested resources. | `AT6` | Perform | — | AND | This is a perform goal because it requires execution of a concrete action: sending a message with precise resource specifications. :chatgpt-content-reference{index="11"} |
+| **G8: Wait for Resource Retrieval** | Wait until the storage retrieves the requested resources. | `AT7` | Achieve | **AchieveCondition:** requested resources have been retrieved. | AND | The source states that after sending the request, the robot waits until the resources have been retrieved. :chatgpt-content-reference{index="12"} |
+| **G9: Handle Low Battery During Collection** | If the assigned robot reaches 10% battery during collection, return it to the recharging station and assign the mission to another robot. | `AT8;AT9;AT10` | Achieve | **AchieveCondition:** collection mission continues with another robot after low-battery condition. | AND | The description explicitly states that if battery falls to 10% during collection, the robot goes back to the recharging station and assigns the mission to another robot. :chatgpt-content-reference{index="13"} |
+| **G10: Deliver Retrieved Resources** | Deliver retrieved resources to the specified location, using as many runs as necessary. | `G11;G12` | Achieve | **AchieveCondition:** all retrieved resources are delivered to the specified location. | AND | The delivery phase begins after retrieval, and the robot must make as many runs as necessary to take all resources to the specified location. :chatgpt-content-reference{index="14"} |
+| **G11: Transport Resources to Specified Location** | Carry resources from their current position toward the specified delivery location. | `AT11` | Perform | — | AND | This is a perform goal because it requires concrete transport action by robot(s). :chatgpt-content-reference{index="15"} |
+| **G12: Repeat Delivery Runs Until Complete** | Perform repeated delivery runs until all resources have been transported. | `AT12` | Achieve | **AchieveCondition:** no remaining resource still needs delivery. | AND | The source explicitly says the robot will make as many runs as necessary to take all resources to the specified location. :chatgpt-content-reference{index="16"} |
+| **G13: Handle Low Battery During Delivery** | If the assigned robot reaches 30% battery during delivery, return the resource to a checkpoint and assign remaining work to another robot. | `FALLBACK((G14;G15),G16)` | Achieve | **AchieveCondition:** delivery continues safely or failure is reported. | AND | The description gives a clear first attempt and failure handling: return the resource to a checkpoint and reassign; if checkpoint return fails, trigger alert and send report. This supports `FALLBACK((G14;G15),G16)`. :chatgpt-content-reference{index="17"} |
+| **G14: Place Resource at Checkpoint** | Return the resource to a checkpoint when delivery battery is low. | `AT13;AT14` | Achieve | **AchieveCondition:** resource is positioned at a checkpoint. | AND | The robot must return the resource to a checkpoint when battery falls to 30% in the delivery phase. :chatgpt-content-reference{index="18"} |
+| **G15: Transfer Remaining Task to Another Robot** | Assign the remaining delivery task to another robot and provide the resource position. | `AT15` | Perform | — | AND | The description states that the remaining task is assigned to another robot, which will know where the resource is positioned. :chatgpt-content-reference{index="19"} |
+| **G16: Alert Sector Manager on Checkpoint Failure** | Trigger an alert and send a report to the sector manager if the resource cannot be returned to a checkpoint. | `AT16` | Perform | — | AND | The source explicitly states that failure to return the resource to a checkpoint triggers an alert and a report to the sector manager. :chatgpt-content-reference{index="20"} |
+| **G17: Support Parallel Multi-Robot Execution** | When items are required from different storages, assign multiple robots to parallel collect-deliver tasks to reduce mission time. | `G18;G19` | Achieve | **AchieveCondition:** parallel collect-deliver tasks are assigned when multiple storages are involved. | AND | The description states that multiple robots can be assigned to parallel collect-deliver tasks when multiple items are required from different storages. :chatgpt-content-reference{index="21"} |
+| **G18: Detect Multi-Storage Requirement** | Determine whether multiple items are required from different storages. | `AT17` | Query | **QueriedProperty:** item-to-storage distribution. | AND | This is a query goal because it retrieves information about whether required items are distributed across different storages. The source explicitly conditions parallelization on multiple items from different storages. :chatgpt-content-reference{index="22"} |
+| **G19: Assign Parallel Collect-Deliver Tasks** | Allocate multiple robots to parallel collection and delivery tasks. | `AT18` | Perform | — | AND | This is a perform goal because it executes a concrete assignment action. The source says multiple robots can be assigned to parallel collect-deliver tasks to reduce mission time. :chatgpt-content-reference{index="23"} |
 
 ---
 
-### Logical Relationships
+## 2. Task Tables
 
-| **Parent** | **Children** | **Relation** | **Runtime** |
-|------------|--------------|--------------|-------------|
-| **G1** | G2, G3 | AND | `;` (sequential – first collection, then delivery) |
-| **G2** | AT1, AT2, AT3, AT4, G2.4 | AND | `;` (sequential – navigation → request → wait → battery check → low‑battery handler) |
-| **G2.4** | AT8, AT9 | AND | `;` (robot recharges, then delegates task) |
-| **G3** | AT5, AT6, AT7, G3.3, G3.4 | AND | `;` (navigation → transport → battery check → low‑battery handler → failure handler) |
-| **G3.3** | AT10, AT9 | AND | `;` (return to checkpoint → delegate remaining work) |
-| **G3.4** | AT11 | AND | `-` (leaf – send alert) |
-
-> **Parallelism** – If multiple items are requested from different storages, the mission planner can spawn additional *Collect* goals (additional instances of G2) and link them in parallel under G1 using the `#` operator. For the current model, a single sequence is assumed.
+| Name | Text | Relation | Location | Number of Robots | Justification |
+|---|---|---:|---|---:|---|
+| **AT1: Read Resource Request** | Obtain the list of required resources from the request. | AND | specified location | 1 | Required before collection because the robot must know the required resources and the requesting agent’s specified location. :chatgpt-content-reference{index="24"} |
+| **AT2: Identify Delivery Destination** | Identify the requesting agent and specified delivery location. | AND | specified location | 1 | The mission requires delivery to the requesting agent in a specified location. :chatgpt-content-reference{index="25"} |
+| **AT3: Estimate Waiting Time and Path** | Estimate waiting time and path to storage places. | AND | storage places | 1 | The collection order is defined by estimated waiting time summed with the robot path. :chatgpt-content-reference{index="26"} |
+| **AT4: Assign Robot or Robots** | Assign one robot or multiple robots depending on the mission structure. | AND | storage places | [1,n] | One robot can perform the basic collect-deliver task, while multiple robots can be assigned when different storages are involved. :chatgpt-content-reference{index="27"} |
+| **AT5: Navigate to Storage** | Move to the storage place where the required resources are available. | AND | storage places | [1,n] | The robot must go to storage places where resources can be found. Multiple robots may do this in parallel for different storages. :chatgpt-content-reference{index="28"} :chatgpt-content-reference{index="29"} |
+| **AT6: Send Resource Specification Message** | Send a message to storage with the precise specification of requested resources. | AND | storage | [1,n] | The description explicitly requires sending a message with precise requested-resource specifications. :chatgpt-content-reference{index="30"} |
+| **AT7: Wait Until Retrieved** | Wait until storage retrieves the requested resources. | AND | storage | [1,n] | The robot waits until the resources have been retrieved before delivery starts. :chatgpt-content-reference{index="31"} |
+| **AT8: Monitor Collection Battery** | Detect whether battery falls to 10% during the collection phase. | AND | storage places | [1,n] | The 10% threshold is explicitly tied to the collection phase. :chatgpt-content-reference{index="32"} |
+| **AT9: Return to Recharging Station** | Move the low-battery robot back to the recharging station. | AND | recharging station | 1 | If battery is low during collection, the robot goes back to the recharging station. :chatgpt-content-reference{index="33"} |
+| **AT10: Reassign Collection Mission** | Assign the mission to another robot. | AND | recharging station | 1 | The mission must be assigned to another robot after the collection-phase battery condition occurs. :chatgpt-content-reference{index="34"} |
+| **AT11: Carry Resources to Destination** | Transport retrieved resources to the specified location. | AND | specified location | [1,n] | The delivery phase requires taking resources to the specified location. :chatgpt-content-reference{index="35"} |
+| **AT12: Repeat Required Runs** | Make as many delivery runs as necessary until all resources are delivered. | AND | specified location | [1,n] | The description explicitly states that the robot will make as many runs as necessary. :chatgpt-content-reference{index="36"} |
+| **AT13: Monitor Delivery Battery** | Detect whether battery falls to 30% during the delivery phase. | AND | specified location | [1,n] | The 30% threshold is explicitly tied to the delivery phase. :chatgpt-content-reference{index="37"} |
+| **AT14: Return Resource to Checkpoint** | Place the resource at a checkpoint when delivery battery is low. | AND | checkpoint | 1 | The robot must return the resource to a checkpoint before assigning remaining work. :chatgpt-content-reference{index="38"} |
+| **AT15: Notify Replacement Robot of Resource Position** | Assign the remaining task to another robot and communicate where the resource is positioned. | AND | checkpoint | 1 | The replacement robot must know where the resource is positioned. :chatgpt-content-reference{index="39"} |
+| **AT16: Trigger Alert and Send Report** | Trigger an alert and send a report to the sector manager if checkpoint return fails. | AND | checkpoint | 1 | This follows the explicit failure-handling rule for checkpoint-return failure. :chatgpt-content-reference{index="40"} |
+| **AT17: Check Item-Storage Distribution** | Determine whether required items are located in different storages. | AND | storage places | 1 | Parallelization depends on whether multiple items are required from different storages. :chatgpt-content-reference{index="41"} |
+| **AT18: Allocate Parallel Robots** | Assign multiple robots to parallel collect-deliver tasks. | AND | storage places | [2,n] | At least two robots are needed for true parallel collect-deliver tasks, and the upper bound depends on the available robot fleet. :chatgpt-content-reference{index="42"} |
 
 ---
 
-### Justification of Design Choices
+## 3. Summary Table
 
-1. **Perform Goals**  
-   Every high‑level objective in this mission (collect, deliver, handle battery, handle failure) requires explicit robot actions; thus they are classified as *Perform* goals.
+| Element | Type | Parent | Main Purpose | Runtime / Execution |
+|---|---|---|---|---|
+| G1 | Goal | Root | Fulfill complete resource request | `G2;(G5;G10)#G15#G18` |
+| G2 | Goal | G1 | Prepare mission execution | `G3;G4` |
+| G3 | Goal | G2 | Obtain request information | `AT1;AT2` |
+| AT1 | Task | G3 | Read resource request | Sequential |
+| AT2 | Task | G3 | Identify delivery destination | Sequential |
+| G4 | Goal | G2 | Define order and assignment | `AT3;AT4` |
+| AT3 | Task | G4 | Estimate waiting time and path | Sequential |
+| AT4 | Task | G4 | Assign robot or robots | Sequential |
+| G5 | Goal | G1 | Collect resources | `G6;G7;G8` |
+| G6 | Goal | G5 | Reach storage places | `AT5` |
+| AT5 | Task | G6 | Navigate to storage | Leaf task |
+| G7 | Goal | G5 | Request resources | `AT6` |
+| AT6 | Task | G7 | Send resource specification message | Leaf task |
+| G8 | Goal | G5 | Wait for retrieval | `AT7` |
+| AT7 | Task | G8 | Wait until retrieved | Leaf task |
+| G9 | Goal | G15 | Handle collection low battery | `AT8;AT9;AT10` |
+| AT8 | Task | G9 | Monitor collection battery | Sequential |
+| AT9 | Task | G9 | Return to recharging station | Sequential |
+| AT10 | Task | G9 | Reassign collection mission | Sequential |
+| G10 | Goal | G1 | Deliver resources | `G11;G12` |
+| G11 | Goal | G10 | Transport resources | `AT11` |
+| AT11 | Task | G11 | Carry resources to destination | Leaf task |
+| G12 | Goal | G10 | Repeat delivery runs | `AT12` |
+| AT12 | Task | G12 | Repeat required runs | Leaf task |
+| G13 | Goal | G15 | Handle delivery low battery | `FALLBACK((G14;G15),G16)` |
+| G14 | Goal | G13 | Place resource at checkpoint | `AT13;AT14` |
+| AT13 | Task | G14 | Monitor delivery battery | Sequential |
+| AT14 | Task | G14 | Return resource to checkpoint | Sequential |
+| G15 | Goal | G13 | Transfer remaining task | `AT15` |
+| AT15 | Task | G15 | Notify replacement robot | Leaf task |
+| G16 | Goal | G13 | Alert sector manager | `AT16` |
+| AT16 | Task | G16 | Trigger alert and report | Leaf task |
+| G17 | Goal | G1 | Support parallel execution | `G18;G19` |
+| G18 | Goal | G17 | Detect multi-storage requirement | `AT17` |
+| AT17 | Task | G18 | Check item-storage distribution | Leaf task |
+| G19 | Goal | G17 | Assign parallel collect-deliver tasks | `AT18` |
+| AT18 | Task | G19 | Allocate parallel robots | Leaf task |
 
-2. **Sequential vs. Parallel**  
-   Collection must finish before delivery can start, so the top‑level relation is sequential (`;`). Within each phase, the required sub‑steps are also strictly ordered (navigation → request → wait → battery check). The only parallelism arises when multiple items are collected concurrently—this can be modelled by spawning multiple `G2` instances under `G1` with `#` (not shown in the base model).
+---
 
-3. **Fallback and Recovery**  
-   Low‑battery situations are handled by dedicated sub‑goals (`G2.4`, `G3.3`) which contain the recovery tasks (`AT8`/`AT10` followed by delegation `AT9`). These are placed as children of the respective phases to ensure they are triggered only when the parent phase is active.
+## 4. Logical Relationships
 
-4. **Task‑Goal Mapping**  
-   Tasks are direct descendants of the phase goals, allowing clear assignment of robot agents and execution locations. Each task is linked with an `AND` relation to its parent goal, ensuring that all tasks in a phase must succeed for the phase to succeed.
+### G1 → G2, G5, G10, G15, G17 **[AND] [`G2;(G5;G10)#G15#G17`]**
+- **Justification:** The complete mission requires mission preparation, collection, delivery, contingency handling, and possible parallel coordination. Preparation must happen first; collection precedes delivery; contingency monitoring and parallel coordination can occur alongside execution. The source distinguishes collection and delivery phases and also defines battery and parallelization behavior. :chatgpt-content-reference{index="43"}
 
-5. **Alerting**  
-   Failure to return a resource to a checkpoint triggers `G3.4`, which in turn executes `AT11` to notify the sector manager. This goal is a leaf (no further children) and is therefore marked with `-`.
+### G2 → G3, G4 **[AND] [`G3;G4`]**
+- **Justification:** The system must first know the requested resources and location, then determine the collection order and assignment. This follows the description that resources are requested, storage places are visited, and order depends on waiting time plus path. :chatgpt-content-reference{index="44"}
 
-The resulting goal model satisfies the mission description, supports parallel execution when needed, and provides a clear mapping from high‑level objectives to concrete robot actions.
+### G3 → AT1, AT2 **[AND] [`AT1;AT2`]**
+- **Justification:** Both the resource list and destination/requesting agent are needed before the mission can be planned. The request includes required resources and a specified delivery location. :chatgpt-content-reference{index="45"}
+
+### G4 → AT3, AT4 **[AND] [`AT3;AT4`]**
+- **Justification:** Estimation of waiting time and path defines ordering, and assignment is necessary to execute the planned order. Parallel assignment may also be used when items are located in different storages. :chatgpt-content-reference{index="46"} :chatgpt-content-reference{index="47"}
+
+### G5 → G6, G7, G8 **[AND] [`G6;G7;G8`]**
+- **Justification:** Collection is sequential: the robot goes to storage, sends a request message, and waits until retrieval. Delivery begins only after retrieval. :chatgpt-content-reference{index="48"}
+
+### G6 → AT5 **[AND]**
+- **Justification:** Navigating to storage operationalizes the goal of reaching storage places. The storage places are explicitly mentioned as the places where resources can be found. :chatgpt-content-reference{index="49"}
+
+### G7 → AT6 **[AND]**
+- **Justification:** Sending the resource specification message is the concrete operational task that fulfills the request-resource goal. :chatgpt-content-reference{index="50"}
+
+### G8 → AT7 **[AND]**
+- **Justification:** Waiting until the resources have been retrieved is explicitly required before the delivery phase begins. :chatgpt-content-reference{index="51"}
+
+### G15 → G9, G13 **[AND] [`G9#G13`]**
+- **Justification:** Mission continuity requires handling both collection-phase and delivery-phase battery exceptions. The two are monitored in different mission phases with different thresholds: 10% for collection and 30% for delivery. :chatgpt-content-reference{index="52"}
+
+### G9 → AT8, AT9, AT10 **[AND] [`AT8;AT9;AT10`]**
+- **Justification:** The low-battery collection rule requires detecting the condition, returning to the recharging station, and assigning the mission to another robot. :chatgpt-content-reference{index="53"}
+
+### G10 → G11, G12 **[AND] [`G11;G12`]**
+- **Justification:** Delivery requires transporting resources and repeating runs until all resources are delivered. The source states that as many runs as necessary must be made. :chatgpt-content-reference{index="54"}
+
+### G11 → AT11 **[AND]**
+- **Justification:** Carrying the resources to the specified location is the concrete task that operationalizes resource transport. :chatgpt-content-reference{index="55"}
+
+### G12 → AT12 **[AND]**
+- **Justification:** Repetition is necessary because one run may not transport all resources. The source explicitly allows “as many runs as necessary.” :chatgpt-content-reference{index="56"}
+
+### G13 → G14, G15, G16 **[AND] [`FALLBACK((G14;G15),G16)`]**
+- **Justification:** The first intended behavior is to return the resource to a checkpoint and assign the remaining task to another robot. If returning the resource fails, the alternative behavior is alerting and reporting to the sector manager. This is a fallback because the failure-handling order is explicit. :chatgpt-content-reference{index="57"}
+
+### G14 → AT13, AT14 **[AND] [`AT13;AT14`]**
+- **Justification:** The system must detect the 30% delivery battery condition and then return the resource to a checkpoint. :chatgpt-content-reference{index="58"}
+
+### G15 → AT15 **[AND]**
+- **Justification:** Assigning the remaining task to another robot and communicating the resource position fulfills the handoff requirement. :chatgpt-content-reference{index="59"}
+
+### G16 → AT16 **[AND]**
+- **Justification:** The alert and sector-manager report are the required response if checkpoint return fails. :chatgpt-content-reference{index="60"}
+
+### G17 → G18, G19 **[AND] [`G18;G19`]**
+- **Justification:** The system must first determine whether the request involves multiple items from different storages, then assign multiple robots to parallel collect-deliver tasks. :chatgpt-content-reference{index="61"}
+
+### G18 → AT17 **[AND]**
+- **Justification:** Checking item-storage distribution operationalizes the decision point for whether parallelization is applicable. :chatgpt-content-reference{index="62"}
+
+### G19 → AT18 **[AND]**
+- **Justification:** Allocating multiple robots operationalizes the parallel collect-deliver strategy intended to reduce mission completion time. :chatgpt-content-reference{index="63"}
+
+---
+
+## 5. Final Hierarchical View
+
+```text
+G1 Fulfill Resource Request
+├── G2 Prepare Mission Execution
+│   ├── G3 Obtain Request Information
+│   │   ├── AT1 Read Resource Request
+│   │   └── AT2 Identify Delivery Destination
+│   └── G4 Define Collection Order and Assignment
+│       ├── AT3 Estimate Waiting Time and Path
+│       └── AT4 Assign Robot or Robots
+├── G5 Collect Required Resources
+│   ├── G6 Reach Storage Places
+│   │   └── AT5 Navigate to Storage
+│   ├── G7 Request Resources from Storage
+│   │   └── AT6 Send Resource Specification Message
+│   └── G8 Wait for Resource Retrieval
+│       └── AT7 Wait Until Retrieved
+├── G10 Deliver Retrieved Resources
+│   ├── G11 Transport Resources to Specified Location
+│   │   └── AT11 Carry Resources to Destination
+│   └── G12 Repeat Delivery Runs Until Complete
+│       └── AT12 Repeat Required Runs
+├── G15 Maintain Mission Continuity
+│   ├── G9 Handle Low Battery During Collection
+│   │   ├── AT8 Monitor Collection Battery
+│   │   ├── AT9 Return to Recharging Station
+│   │   └── AT10 Reassign Collection Mission
+│   └── G13 Handle Low Battery During Delivery
+│       ├── G14 Place Resource at Checkpoint
+│       │   ├── AT13 Monitor Delivery Battery
+│       │   └── AT14 Return Resource to Checkpoint
+│       ├── G15 Transfer Remaining Task to Another Robot
+│       │   └── AT15 Notify Replacement Robot of Resource Position
+│       └── G16 Alert Sector Manager on Checkpoint Failure
+│           └── AT16 Trigger Alert and Send Report
+└── G17 Support Parallel Multi-Robot Execution
+    ├── G18 Detect Multi-Storage Requirement
+    │   └── AT17 Check Item-Storage Distribution
+    └── G19 Assign Parallel Collect-Deliver Tasks
+        └── AT18 Allocate Parallel Robots
+```
+
+
+One modeling note: I preserved the mission wording closely, so locations are limited to those explicitly stated in the source, such as storage, storage places, specified location, recharging station, and checkpoint.

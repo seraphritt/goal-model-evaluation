@@ -1,274 +1,114 @@
-Abaixo está um modelo completo derivado **somente da descrição fornecida**. A missão exige coleta em storages, ordenação por espera + caminho, solicitação e espera pelo recurso, entrega em uma localização especificada, tratamento de bateria baixa em dois limiares diferentes, checkpoint/alerta em falha e possível paralelização com múltiplos robôs. 
+Below is a **goal-model decomposition** grounded only in the provided mission description. I’m using compact modeling rationale rather than hidden chain-of-thought.
 
-Uso `FALLBACK` apenas onde há uma alternativa explicitamente disparada pela impossibilidade de continuar o comportamento principal. Isso também segue a regra fornecida de que filhos envolvidos em `FALLBACK` possuem decomposição AND.  Não introduzo uma decomposição OR pura, porque a descrição não apresenta duas estratégias intercambiáveis em que qualquer uma, livremente, satisfaça o mesmo objetivo; os comportamentos alternativos existentes são contingências condicionais.
+## 1. Modeling decisions
 
-## 1. Goal Model
+The mission has a main sequential structure: **plan collection → collect resources → deliver resources**. The description explicitly says the robot goes to storage places, requests resources, waits until retrieval, and only then begins delivery, so collection and delivery are modeled sequentially. Texto colado
 
-### Goals
+Battery-related behavior is modeled with **FALLBACK** because the mission specifies normal behavior interrupted by thresholds: **10% battery during collection** and **30% battery during delivery**. Texto colado
 
-| Name                                    | Text                                                                                                                                      | Runtime             | Goal Type | Correct Goal Type | Target Condition / Enquired Information                                                                                                                                       | Relation                                | Justification                                                                                                                                                                                             |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | --------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **G1: Resource Request Fulfilled**      | Satisfy a resource request by collecting all required resources and delivering them to the requesting agent at the specified location.    | `G2;((G6;G11)#G18)` | Achieve   | Achieve| **Target:** all requested resources have been delivered to the requesting agent at the specified location.                                                                    | Root — children **AND**                 | Planning must precede execution. For an individual workstream, collection precedes delivery. When several items come from different storages, additional collect-deliver workstreams may run in parallel. |
-| **G2: Mission Prepared**                | Obtain the information required for the mission, establish storage order, and determine robot allocation.                                 | `G3;G4;G5`          | Achieve   | Achieve| **Target:** an executable collection/delivery plan has been established.                                                                                                      | **AND** with G1                         | The mission requires knowledge about requested resources, where they are stored, the delivery destination, storage ordering, and robot assignment before execution.                                       |
-| **G3: Mission Data Queried**            | Retrieve the information necessary to execute the request.                                                                                | `-`                 | Query     |Query | **Enquired information:** required resources; storage places containing them; specified delivery location/requesting agent.                                                   | **AND** with G2                         | The robot cannot determine where to collect or deliver without these data.                                                                                                                                |
-| **G4: Storage Order Defined**           | Determine the order in which required storage places should be visited.                                                                   | `-`                 | Achieve   |Achieve | **Target:** required storages are ordered according to estimated waiting time plus the path to be travelled.                                                                  | **AND** with G2                         | The description explicitly defines this ordering criterion.                                                                                                                                               |
-| **G5: Robot Allocation Defined**        | Determine robot/workstream allocation, including parallel allocation when appropriate.                                                    | `-`                 | Achieve   | Achieve| **Target:** required workstreams have robots assigned; when items from different storages justify parallelization, multiple robots may be assigned.                           | **AND** with G2                         | The description explicitly allows multiple robots to execute parallel collect-deliver tasks to reduce mission completion time.                                                                            |
-| **G6: Resources Collected**             | Complete the collection phase for the main/assigned workstream.                                                                           | `(AT1;G7)#G8`       | Achieve   | Achieve| **Target:** all resources assigned to this collection workstream have been retrieved.                                                                                         | **AND** with G1                         | The robot must navigate to the storage and obtain the resources, while collection battery-continuity behavior is applicable throughout the phase.                                                         |
-| **G7: Resource Request Completed**      | Request the required resources at the reached storage and wait for their retrieval.                                                       | `AT2;AT3`           | Achieve   | Achieve| **Target:** precisely requested resources have been retrieved by the storage.                                                                                                 | **AND** with G6                         | Sending the request occurs only after reaching the storage, and retrieval must occur before delivery begins.                                                                                              |
-| **G8: Collection Continuity Preserved** | Ensure that collection either continues with the assigned robot or is handed over when the 10% battery condition prevents continuation.   | `FALLBACK(G9,G10)`  | Achieve   |Achieve | **Target:** collection remains executable despite the collection-phase battery condition.                                                                                     | **AND** with G6                         | Normally the assigned robot continues. If its battery becomes low at 10%, it returns to recharge and transfers the mission. FALLBACK captures that contingency.                                           |
-| **G9: Continue Collection**             | Continue the collection phase with the currently assigned robot while the collection battery condition does not force a handover.         | `-`                 | Perform   |Perform | —                                                                                                                                                                             | **AND**, fallback primary under G8      | Continuing with the assigned robot is the normal behavior; no alternate robot is required unless the 10% condition occurs.                                                                                |
-| **G10: Collection Handover Completed**  | Handle a 10% battery condition by returning the robot to recharge and transferring the mission.                                           | `AT4;AT5`           | Achieve   | Achieve| **Target:** the low-battery robot is directed to the recharging station and another robot has received the collection mission.                                                | **AND**, fallback alternative under G8  | Both actions are explicitly required by the collection-phase contingency.                                                                                                                                 |
-| **G11: Resources Delivered**            | Complete delivery of all collected resources belonging to the workstream.                                                                 | `G12#G13`           | Achieve   | Achieve| **Target:** all resources assigned to the workstream are at the specified delivery location.                                                                                  | **AND** with G1                         | Delivery runs execute while delivery-phase battery continuity must also be maintained.                                                                                                                    |
-| **G12: Delivery Runs Completed**        | Execute as many transportation runs as needed to move all resources to the specified location.                                            | `AT6;AT7`           | Achieve   |Achieve | **Target:** no resource assigned to the workstream remains to be delivered.                                                                                                   | **AND** with G11                        | The description explicitly states that the robot makes as many runs as necessary.                                                                                                                         |
-| **G13: Delivery Continuity Preserved**  | Ensure delivery continues with the assigned robot or is handed over when the battery reaches the 30% delivery threshold.                  | `FALLBACK(G14,G15)` | Achieve   |Achieve | **Target:** delivery remains executable despite the delivery-phase battery condition.                                                                                         | **AND** with G11                        | Normal delivery continues unless the 30% battery condition activates the handover procedure.                                                                                                              |
-| **G14: Continue Delivery**              | Continue performing delivery runs with the assigned robot while no 30% battery handover is required.                                      | `-`                 | Perform   | Perform| —                                                                                                                                                                             | **AND**, fallback primary under G13     | This represents the normal delivery behavior prior to a low-battery contingency.                                                                                                                          |
-| **G15: Delivery Handover Managed**      | Manage the low-battery delivery handover, including escalation if the resource cannot be returned to a checkpoint.                        | `FALLBACK(G16,G17)` | Achieve   | Achieve| **Target:** either a safe checkpoint handover succeeds or the failure is formally escalated.                                                                                  | **AND**, fallback alternative under G13 | The robot should first attempt checkpoint recovery/handover; only failure to return the resource activates alert/reporting.                                                                               |
-| **G16: Checkpoint Handover Completed**  | Return the resource to a checkpoint and transfer the remaining delivery task to another robot that knows its position.                    | `AT8;AT9`           | Achieve   |Achieve | **Target:** resource is positioned at a checkpoint and the remaining task is assigned to another robot with knowledge of that resource position.                              | **AND**, fallback primary under G15     | This is exactly the required 30% battery procedure when checkpoint return succeeds.                                                                                                                       |
-| **G17: Checkpoint Failure Escalated**   | Trigger an alert and report the failure to the sector manager.                                                                            | `AT10;AT11`         | Achieve   |Achieve | **Target:** an alert has been triggered and the corresponding report has been sent to the sector manager.                                                                     | **AND**, fallback alternative under G15 | This occurs only if returning the resource to a checkpoint fails.                                                                                                                                         |
-| **G18: Parallel Workstreams Completed** | Complete additional collect-deliver workstreams in parallel when multiple items from different storages are allocated to multiple robots. | `-`                 | Achieve   |Achieve | **Target:** all additional parallel collect-deliver workstreams assigned by G5 are complete. If no additional workstream is assigned, this conditional goal is not activated. | **AND** with G1 when applicable         | The description explicitly allows multiple robots to execute parallel collect-deliver tasks to reduce completion time.                                                                                    |
-
-The Query/Achieve/Perform distinction above follows the supplied definitions: query goals obtain information, achieve goals establish a target world state, and perform goals require execution of an action rather than establishment of a state. 
+Parallelism is represented through robot ranges **[1,n]** and an instantiation rule: when multiple items are required from different storages, the collect-deliver mission can be instantiated for multiple robots in parallel. Texto colado
 
 ---
 
-## 2. Task Model
+## 2. Goal table
 
-For robot counts, **1 robot** means one robot executes one instantiated workstream. Parallel execution is represented by several concurrent instances/workstreams rather than assuming that two robots jointly perform every physical operation.
-
-| Name                                   | Text                                                                                                   | Relation         | Location                                     | Number of Robots | Justification                                                                                                                                                                                 |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------- | -------------------------------------------- | ---------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **AT1: Navigate to Storage**           | Travel to the required storage places according to the previously determined order.                    | **AND** with G6  | **storage places**                           | 1 per workstream | The collection phase explicitly requires the robot to go to the storage places where the resources can be found.                                                                              |
-| **AT2: Send Resource Request**         | Send a message to the storage containing the precise specification of the requested resources.         | **AND** with G7  | **storage**                                  |                1 | The message is explicitly sent once the robot has reached a storage and it is time to request the resource.                                                                                   |
-| **AT3: Await Resource Retrieval**      | Wait at the storage until the requested resources have been retrieved.                                 | **AND** with G7  | **storage**                                  |                1 | The description explicitly requires the robot to wait until retrieval is complete before delivery begins.                                                                                     |
-| **AT4: Return for Recharge**           | Return the low-battery robot to the recharging station during collection.                              | **AND** with G10 | **recharging station**                       |                1 | At 10% battery during collection, the assigned robot must go back to the recharging station.                                                                                                  |
-| **AT5: Reassign Collection Mission**   | Assign the unfinished collection mission to another robot.                                             | **AND** with G10 | **recharging station**                       |       2 involved | The description says the low-battery robot goes back to recharge and assigns the mission to another robot. One robot transfers and another receives the mission.                              |
-| **AT6: Deliver Current Load**          | Transport a load of collected resources to the requesting agent's specified location.                  | **AND** with G12 | **specified location**                       |                1 | The fundamental delivery requirement is to take the resources to the specified location.                                                                                                      |
-| **AT7: Repeat Delivery Runs**          | Repeat transportation runs while additional resources remain to be delivered.                          | **AND** with G12 | **storage place(s) ↔ specified location**    |                1 | The robot must make as many runs as necessary to transport all resources. This task may therefore execute zero or more additional iterations after the first run.                             |
-| **AT8: Return Resource to Checkpoint** | During a 30% delivery battery condition, transport the currently carried resource to a checkpoint.     | **AND** with G16 | **checkpoint**                               |                1 | The delivery contingency explicitly requires returning the resource to a checkpoint.                                                                                                          |
-| **AT9: Reassign Remaining Delivery**   | Assign the remaining task to another robot and ensure it knows where the resource has been positioned. | **AND** with G16 | **checkpoint**                               |       2 involved | The description requires assignment to another robot, which must know the resource position.                                                                                                  |
-| **AT10: Trigger Alert**                | Trigger an alert because the robot failed to return the resource to a checkpoint.                      | **AND** with G17 | **Not specified in the mission description** |                1 | The alert is mandatory after checkpoint-return failure, but the description does not identify a physical location for triggering it; inventing one would violate the supplied modeling rules. |
-| **AT11: Report to Sector Manager**     | Send a report concerning the checkpoint-return failure to the sector manager.                          | **AND** with G17 | **Not specified in the mission description** |                1 | The recipient is identified as the sector manager, but no physical sending location is specified.                                                                                             |
-
-The task properties follow the supplied requirement that tasks be operational, have a location grounded in the mission description, and indicate how many robots execute them. 
+| Name | Text | Runtime | Goal Type | Target Condition / Enquired Information | Relation | Justification |
+|---|---|---:|---|---|---|---|
+| **G1: Fulfill Resource Request** | Ensure the required resources are collected from storage and delivered to the requesting agent at the specified location. | `G2;G5` | Achieve | Required resources are delivered to the requesting agent at the specified location. | Root / AND | The mission requires both collection and delivery to satisfy the request. |
+| **G2: Prepare Collection Plan** | Determine where the requested resources are located and the order in which storages should be visited. | `G3;G4` | Achieve | Storage places and visit order are known before execution. | AND | The robot must know both where resources are and the order defined by waiting time plus path. |
+| **G3: Identify Storage Places** | Identify the storage places where the requested resources can be found. | `-` | Query | Storage places containing the requested resources. | AND child of G2 | The description says the robot must go to storage places where the resources can be found. |
+| **G4: Determine Visit Order** | Determine the order of storage visits using estimated waiting time plus the robot path. | `-` | Query | Ordered list of storages based on estimated waiting time plus path to be run. | AND child of G2 | The order is explicitly defined by waiting time estimation summed with the path. |
+| **G5: Execute Collect-Deliver Mission** | Execute the physical collect-deliver mission for the requested resources. | `G6;G9` | Achieve | Resources are collected and delivered. | AND | Collection must occur before delivery because delivery begins only after retrieval. |
+| **G6: Collect Required Resources** | Collect the requested resources from the relevant storage places. | `FALLBACK(G7,G8)` | Achieve | Requested resources have been retrieved from storage. | AND child of G5 | Normal collection is attempted first; low-battery behavior is triggered if battery reaches 10% in collection. |
+| **G7: Normal Collection Execution** | Move to storage, request the specified resources, and wait until retrieval. | `AT1;AT2;AT3` | Achieve | Requested resources are retrieved and ready for delivery. | AND child of G6 | The description requires going to storage, sending the request, and waiting for retrieval. |
+| **G8: Collection Low-Battery Handover** | If battery reaches 10% during collection, return to the recharging station and assign the mission to another robot. | `AT4;AT5` | Achieve | Original robot is at the recharging station and the mission is assigned to another robot. | AND fallback child of G6 | The 10% collection battery threshold explicitly interrupts normal collection. |
+| **G9: Deliver Retrieved Resources** | Deliver all retrieved resources to the requesting agent at the specified location. | `FALLBACK(G10,G11)` | Achieve | All resources are at the specified location. | AND child of G5 | Normal delivery is attempted first; low-battery delivery behavior applies at 30%. |
+| **G10: Normal Delivery Execution** | Perform as many delivery runs as necessary to move all resources to the specified location. | `AT6;AT7` | Achieve | All resources are delivered to the specified location. | AND child of G9 | The mission says the robot makes as many runs as necessary to take all resources to the specified location. |
+| **G11: Delivery Low-Battery Contingency** | If battery reaches 30% during delivery, return the resource to a checkpoint and assign the remaining task to another robot. | `FALLBACK(G12,G13)` | Achieve | Either checkpoint handover succeeds, or alert/report escalation is completed. | AND fallback child of G9 | The 30% threshold creates an exception path; checkpoint failure triggers alert/report. |
+| **G12: Checkpoint Handover** | Return the resource to a checkpoint and assign the remaining delivery task to another robot with the resource position. | `AT8;AT9` | Achieve | Resource is at checkpoint and replacement robot knows its position. | AND child of G11 | The mission says the new robot must know where the resource is positioned. |
+| **G13: Alert Sector Manager** | If returning the resource to a checkpoint fails, trigger an alert and send a report to the sector manager. | `AT10;AT11` | Achieve | Alert is triggered and report is sent to the sector manager. | AND fallback child of G11 | The mission explicitly requires alert and report when checkpoint return fails. |
 
 ---
 
-# 3. Hierarchical tree
+## 3. Task table
 
-```text
-G1 Resource Request Fulfilled
-│
-├── AND → G2 Mission Prepared
-│   ├── AND → G3 Mission Data Queried
-│   ├── AND → G4 Storage Order Defined
-│   └── AND → G5 Robot Allocation Defined
-│
-├── AND → G6 Resources Collected
-│   ├── AND → AT1 Navigate to Storage
-│   ├── AND → G7 Resource Request Completed
-│   │   ├── AND → AT2 Send Resource Request
-│   │   └── AND → AT3 Await Resource Retrieval
-│   │
-│   └── AND → G8 Collection Continuity Preserved
-│       ├── AND → G9 Continue Collection
-│       └── AND → G10 Collection Handover Completed
-│           ├── AND → AT4 Return for Recharge
-│           └── AND → AT5 Reassign Collection Mission
-│
-├── AND → G11 Resources Delivered
-│   ├── AND → G12 Delivery Runs Completed
-│   │   ├── AND → AT6 Deliver Current Load
-│   │   └── AND → AT7 Repeat Delivery Runs
-│   │
-│   └── AND → G13 Delivery Continuity Preserved
-│       ├── AND → G14 Continue Delivery
-│       └── AND → G15 Delivery Handover Managed
-│           ├── AND → G16 Checkpoint Handover Completed
-│           │   ├── AND → AT8 Return Resource to Checkpoint
-│           │   └── AND → AT9 Reassign Remaining Delivery
-│           │
-│           └── AND → G17 Checkpoint Failure Escalated
-│               ├── AND → AT10 Trigger Alert
-│               └── AND → AT11 Report to Sector Manager
-│
-└── AND, conditional → G18 Parallel Workstreams Completed
-```
-
-The apparent AND relationships inside the fallback branches are deliberate: the supplied definition explicitly says that when `FALLBACK(exp1, exp2)` is used, `exp1` and `exp2` are connected by an AND-decomposition even though the second executes only if the first fails. 
+| Name | Text | Relation | Location | Number of Robots | Justification |
+|---|---|---|---|---:|---|
+| **AT1: Go to Storage** | Robot goes to the storage place where the requested resource can be found. | AND child of G7 | storage | `[1,n]` | One robot can perform a collect task, but multiple robots may be assigned in parallel for different storages. |
+| **AT2: Send Resource Request** | Robot sends a message to the storage with the precise specification of the requested resources. | AND child of G7 | storage | `[1,n]` | The description explicitly requires a message with precise resource specification. |
+| **AT3: Wait for Retrieval** | Robot waits until the requested resources have been retrieved. | AND child of G7 | storage | `[1,n]` | The robot must wait until retrieval before delivery begins. |
+| **AT4: Return to Recharging Station** | Robot returns to the recharging station when its battery reaches 10% during collection. | AND child of G8 | recharging station | `1` | The low-battery collection condition applies to the assigned robot. |
+| **AT5: Assign Mission to Another Robot** | Robot assigns the remaining mission to another robot. | AND child of G8 | recharging station | `2` | The current robot and the replacement robot are involved in the handover. |
+| **AT6: Run to Specified Location** | Robot transports retrieved resources to the specified location. | AND child of G10 | specified location | `[1,n]` | Multiple runs may be necessary, and multiple robots may be used for different items. |
+| **AT7: Complete Delivery to Requesting Agent** | Robot completes delivery of the resources to the requesting agent. | AND child of G10 | specified location | `[1,n]` | The mission objective is delivery to the requesting agent in the specified location. |
+| **AT8: Return Resource to Checkpoint** | Robot returns the resource to a checkpoint when battery reaches 30% during delivery. | AND child of G12 | checkpoint | `1` | The mission explicitly requires returning the resource to a checkpoint during delivery low battery. |
+| **AT9: Assign Remaining Task to Replacement Robot** | Assign the remaining delivery task to another robot and communicate where the resource is positioned. | AND child of G12 | checkpoint | `2` | The replacement robot must know the checkpoint/resource position. |
+| **AT10: Trigger Alert** | Trigger an alert if the robot fails to return the resource to a checkpoint. | AND child of G13 | checkpoint | `1` | Alert is required when checkpoint return fails. |
+| **AT11: Send Report to Sector Manager** | Send a report about the checkpoint-return failure to the sector manager. | AND child of G13 | sector manager | `1` | The mission explicitly says the report must be sent to the sector manager. |
 
 ---
 
-# 4. Logical Relationships
+## 4. Summary table
 
-### G1 → G2, G6, G11, G18 **[AND] [Sequential + Parallel]**
-
-**Runtime**
-
-`G2;((G6;G11)#G18)`
-
-**Justification:** Mission preparation occurs first. Within the principal workstream, collection must occur before delivery because the description explicitly says that delivery begins once the resources have been retrieved. When multiple items from different storages exist, additional collect-deliver workstreams may simultaneously execute using multiple robots. 
-
----
-
-### G2 → G3, G4, G5 **[AND] [Sequential]**
-
-**Runtime**
-
-`G3;G4;G5`
-
-**Justification:** The mission first needs its relevant data, then needs a storage-ordering decision based on those data, followed by allocation of the work to robot workstreams.
+| Element | Children | Decomposition | Runtime / Ordering |
+|---|---|---|---|
+| **G1** | G2, G5 | AND | `G2;G5` |
+| **G2** | G3, G4 | AND | `G3;G4` |
+| **G5** | G6, G9 | AND | `G6;G9` |
+| **G6** | G7, G8 | AND | `FALLBACK(G7,G8)` |
+| **G7** | AT1, AT2, AT3 | AND | `AT1;AT2;AT3` |
+| **G8** | AT4, AT5 | AND | `AT4;AT5` |
+| **G9** | G10, G11 | AND | `FALLBACK(G10,G11)` |
+| **G10** | AT6, AT7 | AND | `AT6;AT7` |
+| **G11** | G12, G13 | AND | `FALLBACK(G12,G13)` |
+| **G12** | AT8, AT9 | AND | `AT8;AT9` |
+| **G13** | AT10, AT11 | AND | `AT10;AT11` |
 
 ---
 
-### G6 → AT1, G7, G8 **[AND] [Sequential + Parallel]**
+## 5. Logical relationships
 
-**Runtime**
+**G1 → G2, G5 [AND][sequential: `G2;G5`]**  
+**Justification:** The mission must first determine how to collect resources and then execute the collection-delivery mission.
 
-`(AT1;G7)#G8`
+**G2 → G3, G4 [AND][sequential: `G3;G4`]**  
+**Justification:** The robot must know the storage places before determining the order based on waiting time and path.
 
-**Justification:** The robot must first travel to storage and then request/retrieve the resources. Battery continuity is a cross-cutting concern that applies while these collection activities occur.
+**G5 → G6, G9 [AND][sequential: `G6;G9`]**  
+**Justification:** Delivery starts only once the resources have been retrieved.
 
----
+**G6 → G7, G8 [AND][fallback: `FALLBACK(G7,G8)`]**  
+**Justification:** Normal collection is the primary path. If battery reaches 10% during collection, the robot goes to the recharging station and assigns the mission to another robot.
 
-### G7 → AT2, AT3 **[AND] [Sequential]**
+**G7 → AT1, AT2, AT3 [AND][sequential: `AT1;AT2;AT3`]**  
+**Justification:** The robot must go to storage, send the resource request, and wait for retrieval in that order.
 
-**Runtime**
+**G8 → AT4, AT5 [AND][sequential: `AT4;AT5`]**  
+**Justification:** The robot first returns to the recharging station, then assigns the mission to another robot.
 
-`AT2;AT3`
+**G9 → G10, G11 [AND][fallback: `FALLBACK(G10,G11)`]**  
+**Justification:** Normal delivery is attempted first. If battery reaches 30% during delivery, checkpoint handover behavior is triggered.
 
-**Justification:** The request message must be sent before the robot waits for the storage to retrieve the requested resources.
+**G10 → AT6, AT7 [AND][sequential: `AT6;AT7`]**  
+**Justification:** The robot performs delivery runs and completes delivery to the requesting agent.
 
----
+**G11 → G12, G13 [AND][fallback: `FALLBACK(G12,G13)`]**  
+**Justification:** Returning the resource to a checkpoint is attempted first. If that fails, alert/report escalation is required.
 
-### G8 → G9, G10 **[AND] [FALLBACK]**
+**G12 → AT8, AT9 [AND][sequential: `AT8;AT9`]**  
+**Justification:** The resource must first be placed at the checkpoint before the remaining task can be assigned to another robot with the known resource position.
 
-**Runtime**
-
-`FALLBACK(G9,G10)`
-
-**Justification:** The assigned robot normally continues collection. If continuing becomes impossible because the collection battery reaches the stated 10% condition, G10 is executed instead.
-
----
-
-### G10 → AT4, AT5 **[AND] [Sequential]**
-
-**Runtime**
-
-`AT4;AT5`
-
-**Justification:** The mission description states that the low-battery collection robot goes back to the recharging station **and** assigns the mission to another robot. Both are needed to complete the handover.
+**G13 → AT10, AT11 [AND][sequential: `AT10;AT11`]**  
+**Justification:** The mission requires both an alert and a report to the sector manager after checkpoint-return failure.
 
 ---
 
-### G11 → G12, G13 **[AND] [Parallel]**
+## 6. Parallel execution rule
 
-**Runtime**
+When multiple items are required from different storages, the model should instantiate **G5: Execute Collect-Deliver Mission** once per storage/resource bundle and execute those instances in parallel:
 
-`G12#G13`
+**G5₁ # G5₂ # … # G5ₙ**
 
-**Justification:** Delivery runs are the operational activity, while delivery battery continuity must be maintained during those runs.
+This follows the description that multiple robots can be assigned to parallel collect-deliver tasks to reduce mission completion time. Each instantiated collect-deliver task still follows the internal sequence:
 
----
-
-### G12 → AT6, AT7 **[AND] [Sequential]**
-
-**Runtime**
-
-`AT6;AT7`
-
-**Justification:** A resource load is delivered first; if resources remain, the robot repeats the run as many times as necessary. `AT7` therefore represents a repetition/loop whose additional executions depend on remaining load.
-
----
-
-### G13 → G14, G15 **[AND] [FALLBACK]**
-
-**Runtime**
-
-`FALLBACK(G14,G15)`
-
-**Justification:** Delivery normally continues with the assigned robot. If the delivery battery reaches the 30% condition, the normal behavior can no longer continue and the handover procedure becomes the fallback.
-
----
-
-### G15 → G16, G17 **[AND] [FALLBACK]**
-
-**Runtime**
-
-`FALLBACK(G16,G17)`
-
-**Justification:** The first required response to low delivery battery is to return the resource to a checkpoint and transfer the task. Only **if returning the resource to a checkpoint fails** must an alert and manager report be generated.
-
-This is one of the clearest explicit fallback relationships in the mission.
-
----
-
-### G16 → AT8, AT9 **[AND] [Sequential]**
-
-**Runtime**
-
-`AT8;AT9`
-
-**Justification:** The carried resource must first be positioned at the checkpoint; afterward the remaining mission can be transferred to another robot, which is informed of the resource position.
-
----
-
-### G17 → AT10, AT11 **[AND] [Sequential]**
-
-**Runtime**
-
-`AT10;AT11`
-
-**Justification:** Following checkpoint-return failure, both an alert and a report are mandatory. Alert generation is modeled first, followed by sending the report to the sector manager.
-
----
-
-# 5. Summary
-
-| ID   | Node                                          | Parent | Relation         | Execution / Main property                       |
-| ---- | --------------------------------------------- | ------ | ---------------- | ----------------------------------------------- |
-| G1   | Goal — Resource Request Fulfilled             | —      | Root AND         | `G2;((G6;G11)#G18)`                             |
-| G2   | Goal — Mission Prepared                       | G1     | AND              | `G3;G4;G5`                                      |
-| G3   | Query Goal — Mission Data Queried             | G2     | AND              | Leaf                                            |
-| G4   | Achieve Goal — Storage Order Defined          | G2     | AND              | Leaf                                            |
-| G5   | Achieve Goal — Robot Allocation Defined       | G2     | AND              | Leaf                                            |
-| G6   | Achieve Goal — Resources Collected            | G1     | AND              | `(AT1;G7)#G8`                                   |
-| AT1  | Task — Navigate to Storage                    | G6     | AND              | storage places, 1 robot/workstream              |
-| G7   | Achieve Goal — Resource Request Completed     | G6     | AND              | `AT2;AT3`                                       |
-| AT2  | Task — Send Resource Request                  | G7     | AND              | storage, 1                                      |
-| AT3  | Task — Await Resource Retrieval               | G7     | AND              | storage, 1                                      |
-| G8   | Achieve Goal — Collection Continuity          | G6     | AND              | `FALLBACK(G9,G10)`                              |
-| G9   | Perform Goal — Continue Collection            | G8     | AND              | Primary fallback branch                         |
-| G10  | Achieve Goal — Collection Handover            | G8     | AND              | `AT4;AT5`                                       |
-| AT4  | Task — Return for Recharge                    | G10    | AND              | recharging station, 1                           |
-| AT5  | Task — Reassign Collection Mission            | G10    | AND              | recharging station, 2 involved                  |
-| G11  | Achieve Goal — Resources Delivered            | G1     | AND              | `G12#G13`                                       |
-| G12  | Achieve Goal — Delivery Runs Completed        | G11    | AND              | `AT6;AT7`                                       |
-| AT6  | Task — Deliver Current Load                   | G12    | AND              | specified location, 1                           |
-| AT7  | Task — Repeat Delivery Runs                   | G12    | AND              | storages ↔ specified location, 1                |
-| G13  | Achieve Goal — Delivery Continuity            | G11    | AND              | `FALLBACK(G14,G15)`                             |
-| G14  | Perform Goal — Continue Delivery              | G13    | AND              | Primary fallback branch                         |
-| G15  | Achieve Goal — Delivery Handover Managed      | G13    | AND              | `FALLBACK(G16,G17)`                             |
-| G16  | Achieve Goal — Checkpoint Handover            | G15    | AND              | `AT8;AT9`                                       |
-| AT8  | Task — Return Resource to Checkpoint          | G16    | AND              | checkpoint, 1                                   |
-| AT9  | Task — Reassign Remaining Delivery            | G16    | AND              | checkpoint, 2 involved                          |
-| G17  | Achieve Goal — Checkpoint Failure Escalated   | G15    | AND              | `AT10;AT11`                                     |
-| AT10 | Task — Trigger Alert                          | G17    | AND              | location unspecified, 1                         |
-| AT11 | Task — Report to Sector Manager               | G17    | AND              | location unspecified, 1                         |
-| G18  | Achieve Goal — Parallel Workstreams Completed | G1     | AND, conditional | Parallel additional collect-deliver workstreams |
-
-## Key modeling decisions
-
-**1. Collection and delivery are sequential for an individual workstream.** The text explicitly says that, once resources have been retrieved, “the delivery phase begins,” so modeling them as parallel for the same resource would contradict the mission. 
-
-**2. Parallelism applies across different workstreams.** When resources are distributed across different storages, several robots can execute separate collect-deliver workstreams concurrently. Therefore the root runtime separates intra-workstream sequence `(G6;G11)` from inter-workstream parallelism through `#`.
-
-**3. The 10% and 30% behaviors are not equivalent.** At 10% during **collection**, the robot goes to the recharging station and transfers the mission. At 30% during **delivery**, it must first secure the resource at a checkpoint before transferring the remaining work.
-
-**4. Checkpoint failure is a nested fallback.** `G15 = FALLBACK(G16,G17)` is preferable to OR because escalation is not a freely selectable alternative: it must happen specifically when checkpoint return fails.
-
-**5. No pure OR decomposition is necessary.** The mission contains mandatory sequential/parallel activities and conditional fallbacks, rather than two equivalent alternative ways of satisfying a requirement. Adding OR branches just to use OR would introduce semantics that are not supported by the source.
-
-**6. The examples of sterile medical equipment and clean linens are treated as examples of possible resources, not separate OR branches.** The description labels them as “Examples of goods/equipments,” so making them mandatory or exhaustive mission alternatives would over-model the source. 
-
-This structure follows the requested output conventions for goal/task tables, summary, and explicit logical relationships. 
-
+**G2; G6; G9**, with the same battery fallbacks.

@@ -1,0 +1,195 @@
+Based on the mission description, I treat the model as a **periodic hospital-room vital-sign checking mission** in which robots must visit occupied rooms, prioritize high-risk patients, perform condition-specific checks, handle failures, and escalate infeasibility. The mission text supports the recurring two-hour cycle, occupied-room visits, pre-entry checks, patient identification, vital-sign collection, failure handling, hygiene actions, extra-robot allocation, and manager escalation. Texto colado  
+The modeling definitions require hierarchical AND/OR decomposition, runtime annotations, goal types, and task attributes. Texto colado Texto colado Texto colado
+
+## 1. Design rationale
+
+The mission naturally decomposes into five main concerns:
+
+1. **Plan the mission scope and robot resources**: identify occupied rooms, high-risk patients, and whether the assigned robots can complete the mission in time.
+2. **Prioritize high-risk patients**: all high-risk patients must be checked in the first 15 minutes.
+3. **Execute the room-checking workflow**: for each occupied room, the robot must satisfy pre-entry conditions, identify the correct patient, interact with the patient, collect required vital signs, handle failures, and finish the room.
+4. **Apply patient-condition-specific checks**: infectious disease, post-surgical condition, and diabetes history each require different measurements.
+5. **Handle exceptional cases**: patient unavailable, insufficient battery, failed collection, non-response, infectious-disease sterilization, patient-contact disinfection, extra robot assignment, and manager alert.
+
+I use **AND decompositions** when the mission says several things are jointly required, such as checking availability and battery before entering. I use **OR decompositions** only for true alternatives, such as identifying the patient by asking or scanning the barcode. I use **FALLBACK** only when the description explicitly gives a primary action and a secondary action if the first cannot proceed, such as assigning more robots if the mission cannot be completed in time, and alerting the manager if no robot combination can complete it. Texto colado
+
+---
+
+# 2. Goal table
+
+| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
+|---|---|---:|---|---|---|---|
+| **G1: Complete periodic vital-sign mission** | Complete the recurring mission of checking required vital signs for all patients in occupied rooms every two hours. | `G2;G6;G7` | Achieve | `all_required_patient_checks_completed_or_escalated_within_time_constraints` | AND | The mission requires every occupied room to be visited every two hours, with high-risk timing and escalation if completion is impossible. Texto colado |
+| **G2: Prepare mission scope and resources** | Determine rooms, priorities, and robot feasibility before execution. | `(G3#G4);G5` | Achieve | `mission_scope_and_robot_plan_available` | AND | Occupied rooms, high-risk patients, and robot availability must all be known before planning the mission. |
+| **G3: Determine occupied rooms** | Obtain the set of occupied rooms that must be visited. | `-` | Query | `occupied_rooms` | AND child of G2 | The robot must visit every occupied room. |
+| **G4: Determine high-risk patients** | Identify patients classified as high risk. | `-` | Query | `high_risk_patients` | AND child of G2 | High-risk patients must be checked in the first 15 minutes, so they must be known before route execution. |
+| **G5: Ensure feasible robot allocation** | Ensure that the mission can be completed by the assigned robot or by additional robots; otherwise escalate. | `FALLBACK(AT3,FALLBACK(AT4,AT5))` | Achieve | `robot_combination_can_complete_mission_or_manager_alerted` | AND child of G2 | The assigned robot is primary; additional robots can help if the mission is impossible in time; the manager is alerted if no combination can complete it. |
+| **G6: Prioritize high-risk checks** | Ensure all high-risk patients are checked within the first 15 minutes of the mission. | `-` | Achieve | `all_high_risk_patients_checked_within_15_minutes` | AND child of G1 | The description explicitly imposes the first-15-minute constraint for high-risk patients. |
+| **G7: Execute occupied-room checking workflow** | For each occupied room, perform the full patient checking workflow. | `G8;G13;G16;G24` | Achieve | `all_occupied_rooms_processed` | AND child of G1 | The robot must visit every occupied room, check entry conditions, identify the patient, perform checks, and then move to the next room. |
+| **G8: Satisfy pre-entry conditions** | Before entering a room, ensure patient availability and sufficient battery. | `FALLBACK(G9,G10);FALLBACK(G11,G12)` | Achieve | `room_entry_conditions_satisfied` | AND child of G7 | The robot must check patient availability and battery before entering; unavailable patients and insufficient battery have prescribed recovery actions. |
+| **G9: Confirm patient available** | Check whether the patient is available for vital-sign checking. | `-` | Query | `patient_available_for_checking` | AND child of G8 | Availability is explicitly checked before room entry. |
+| **G10: Revisit unavailable patient** | If the patient is not available, return after 5 minutes. | `-` | Achieve | `patient_revisited_after_5_minutes` | AND child of G8 through FALLBACK | The description states that if the patient is not available, the robot should come back in 5 minutes. |
+| **G11: Confirm battery sufficient** | Check whether the robot has enough battery to perform all tasks inside the room. | `-` | Query | `battery_enough_for_room_tasks` | AND child of G8 | Battery sufficiency must be checked before entering the room. |
+| **G12: Restore capability after low battery** | If battery is insufficient, recharge the robot and reassign tasks. | `AT10;AT11` | Achieve | `robot_recharged_and_tasks_reassigned` | AND child of G8 through FALLBACK | If battery is insufficient, the robot must recharge and the tasks need to be reassigned. |
+| **G13: Identify correct patient** | Identify the correct patient in the room. | `G14#G15` | Query | `correct_patient_identity` | AND child of G7 | Rooms may have one or more beds, so the robot must identify the correct patient. |
+| **G14: Identify by asking** | Identify the patient by asking. | `-` | Query | `patient_identity_from_patient_response` | OR child of G13 | The mission gives asking as one valid identification alternative. |
+| **G15: Identify by barcode** | Identify the patient by scanning the patient barcode. | `-` | Query | `patient_identity_from_barcode` | OR child of G13 | The mission gives barcode scanning as another valid identification alternative. |
+| **G16: Perform patient interaction and measurement** | Approach the patient, explain the procedure, provide instructions, collect required signs, and handle failures. | `G17;G18;G22` | Achieve | `patient_checked_or_failure_handled` | AND child of G7 | The patient interaction precedes measurement, and failed collection triggers assessment questions and possible alert. |
+| **G17: Prepare patient for procedure** | Approach the patient, announce the procedure, and provide instructions. | `AT14;AT15;AT16` | Perform | — | AND child of G16 | These are concrete actions explicitly required once inside the room. |
+| **G18: Collect required condition-specific signs** | Collect the vital signs required by the patient’s condition. | `G19#G20#G21` | Achieve | `required_vital_signs_collected_for_patient_condition` | AND child of G16 | Different patient categories require different signs; multiple conditions may apply to the same patient. |
+| **G19: Check infectious-disease patient signs** | For infectious-disease patients, check heart rate, blood pressure, body temperature, and blood oxygenation. | `AT17#AT18#AT19#AT20` | Achieve | `infectious_disease_required_signs_collected` | AND child of G18 | The description lists four required measurements for infectious-disease patients. |
+| **G20: Check post-surgical patient signs** | For post-surgical patients, check heart rate and blood oxygenation. | `AT21#AT22` | Achieve | `post_surgical_required_signs_collected` | AND child of G18 | The description lists heart rate and blood oxygenation for post-surgical patients. |
+| **G21: Check diabetic-history patient signs** | For patients with a history of diabetes, check blood glucose level. | `-` | Achieve | `blood_glucose_level_checked` | AND child of G18 | The description requires blood glucose checking for patients with diabetes history. |
+| **G22: Handle failed vital-sign collection** | If any necessary vital sign cannot be collected, assess patient status and alert on non-response. | `AT24;G23` | Achieve | `failed_collection_assessed_or_responsible_staff_alerted` | AND child of G16 | Failed collection triggers questions; non-response triggers alert to nurse/doctor. |
+| **G23: Alert responsible clinician on non-response** | Send an alert to the responsible nurse or doctor if the patient does not respond. | `-` | Perform | — | AND child of G22 | The mission explicitly requires an alert in case of non-response. |
+| **G24: Complete room and hygiene workflow** | Mark the patient as done, proceed to the next room, and perform required sterilization or disinfection. | `AT26;AT27;(G25#G26)` | Achieve | `room_completed_and_required_hygiene_done` | AND child of G7 | After checking the patient, the robot marks completion and proceeds; infectious disease and patient contact create hygiene duties. |
+| **G25: Sterilize after infectious-disease room** | Sterilize the robot after leaving a room where an infectious-disease patient is treated. | `-` | Perform | — | AND child of G24 | The description says the robot must be sterilized after coming out of such a room. |
+| **G26: Disinfect after patient contact** | Disinfect the robot’s actuators after any duty involving patient contact. | `-` | Perform | — | AND child of G24 | Patient-contact duties require actuator disinfection afterwards. |
+
+---
+
+# 3. Task table
+
+| Name | Text | Relation | Location | Number of Robots | Justification |
+|---|---|---|---|---:|---|
+| **AT1: Retrieve occupied rooms** | Retrieve or confirm the set of occupied rooms to be visited. | AND child of G3 | `occupied_rooms` | 1 | Every occupied room must be visited. |
+| **AT2: Identify high-risk patients** | Determine which patients are high risk. | AND child of G4 | `occupied_rooms` | 1 | High-risk patients have a first-15-minute deadline. |
+| **AT3: Use assigned robot plan** | Attempt to complete the mission with the assigned robot. | AND child of G5 through FALLBACK | `site` | 1 | The description refers first to “the assigned robot.” |
+| **AT4: Assign additional robots** | Assign additional robots if the mission cannot be performed in the required time. | AND child of G5 through FALLBACK | `site` | `[1,N]` | Additional robots may help when completion is otherwise impossible. |
+| **AT5: Alert site manager** | Alert the responsible site manager if no combination of robots can complete the mission. | AND child of G5 through FALLBACK | `site` | 1 | The manager must be alerted if no robot combination can complete the mission. |
+| **AT6: Route high-risk patients first** | Schedule and execute high-risk patient checks within the first 15 minutes. | AND child of G6 | `occupied_rooms` | `[1,N]` | Extra robots may be used if needed to satisfy timing. |
+| **AT7: Check patient availability** | Check whether the patient is available before entering the room. | AND child of G9 | `room` | 1 | The robot must check availability before entering. |
+| **AT8: Return after 5 minutes** | Return to the room 5 minutes later if the patient is unavailable. | AND child of G10 | `room` | 1 | The description gives this recovery behavior. |
+| **AT9: Check battery sufficiency** | Check whether there is enough battery to perform all tasks inside the room. | AND child of G11 | `room` | 1 | Battery sufficiency is checked before entering. |
+| **AT10: Recharge robot** | Recharge the robot if battery is insufficient. | AND child of G12 | `site` | 1 | The robot should recharge if there is not enough battery. |
+| **AT11: Reassign room tasks** | Reassign the tasks affected by the low battery. | AND child of G12 | `site` | `[1,N]` | The description states the tasks need to be reassigned. |
+| **AT12: Ask patient identity** | Ask the patient to confirm identity. | OR child of G14/G13 | `room` | 1 | Asking is one allowed identification method. |
+| **AT13: Scan patient barcode** | Scan the patient barcode to identify the correct patient. | OR child of G15/G13 | `room` | 1 | Barcode scanning is the other allowed identification method. |
+| **AT14: Approach patient** | Approach the patient once inside the room. | AND child of G17 | `room` | 1 | The robot must approach the patient. |
+| **AT15: Announce procedure** | Announce the procedure to be performed. | AND child of G17 | `room` | 1 | The robot must announce the procedure. |
+| **AT16: Provide instructions** | Provide instructions to the patient. | AND child of G17 | `room` | 1 | The robot must provide patient instructions. |
+| **AT17: Check heart rate for infectious disease** | Measure heart rate for an infectious-disease patient. | AND child of G19 | `room` | 1 | Heart rate is required for infectious-disease patients. |
+| **AT18: Check blood pressure** | Measure blood pressure for an infectious-disease patient. | AND child of G19 | `room` | 1 | Blood pressure is required for infectious-disease patients. |
+| **AT19: Check body temperature** | Measure body temperature for an infectious-disease patient. | AND child of G19 | `room` | 1 | Body temperature is required for infectious-disease patients. |
+| **AT20: Check blood oxygenation for infectious disease** | Measure blood oxygenation for an infectious-disease patient. | AND child of G19 | `room` | 1 | Blood oxygenation is required for infectious-disease patients. |
+| **AT21: Check heart rate for post-surgical patient** | Measure heart rate for a post-surgical patient. | AND child of G20 | `room` | 1 | Heart rate is required for post-surgical patients. |
+| **AT22: Check blood oxygenation for post-surgical patient** | Measure blood oxygenation for a post-surgical patient. | AND child of G20 | `room` | 1 | Blood oxygenation is required for post-surgical patients. |
+| **AT23: Check blood glucose** | Measure blood glucose level for a patient with diabetes history. | AND child of G21 | `room` | 1 | Blood glucose is required for patients with diabetes history. |
+| **AT24: Ask assessment questions** | Ask assessment questions for any vital sign that failed to be collected. | AND child of G22 | `room` | 1 | Failed collection triggers assessment questions. |
+| **AT25: Send clinician alert** | Alert the responsible nurse or doctor if the patient does not respond. | AND child of G23 | `room` | 1 | Non-response triggers alert to responsible staff. |
+| **AT26: Mark patient done** | Mark the patient check as completed. | AND child of G24 | `room` | 1 | Once checked, the patient must be marked as done. |
+| **AT27: Proceed to next room** | Move on to the next occupied room. | AND child of G24 | `occupied_rooms` | 1 | After completion, the robot proceeds to the next room. |
+| **AT28: Sterilize robot** | Sterilize the robot after leaving an infectious-disease room. | AND child of G25 | `room` | 1 | Sterilization is required after leaving such a room. |
+| **AT29: Disinfect actuators** | Disinfect actuators after patient-contact duties. | AND child of G26 | `room` | 1 | Patient contact requires actuator disinfection. |
+
+---
+
+# 4. Summary table
+
+| Parent | Children | Relation | Runtime |
+|---|---|---|---|
+| G1 | G2, G6, G7 | AND | `G2;G6;G7` |
+| G2 | G3, G4, G5 | AND | `(G3#G4);G5` |
+| G3 | AT1 | AND | `-` |
+| G4 | AT2 | AND | `-` |
+| G5 | AT3, AT4, AT5 | AND | `FALLBACK(AT3,FALLBACK(AT4,AT5))` |
+| G6 | AT6 | AND | `-` |
+| G7 | G8, G13, G16, G24 | AND | `G8;G13;G16;G24` |
+| G8 | G9, G10, G11, G12 | AND | `FALLBACK(G9,G10);FALLBACK(G11,G12)` |
+| G9 | AT7 | AND | `-` |
+| G10 | AT8 | AND | `-` |
+| G11 | AT9 | AND | `-` |
+| G12 | AT10, AT11 | AND | `AT10;AT11` |
+| G13 | G14, G15 | OR | `G14#G15` |
+| G14 | AT12 | OR | `-` |
+| G15 | AT13 | OR | `-` |
+| G16 | G17, G18, G22 | AND | `G17;G18;G22` |
+| G17 | AT14, AT15, AT16 | AND | `AT14;AT15;AT16` |
+| G18 | G19, G20, G21 | AND | `G19#G20#G21` |
+| G19 | AT17, AT18, AT19, AT20 | AND | `AT17#AT18#AT19#AT20` |
+| G20 | AT21, AT22 | AND | `AT21#AT22` |
+| G21 | AT23 | AND | `-` |
+| G22 | AT24, G23 | AND | `AT24;G23` |
+| G23 | AT25 | AND | `-` |
+| G24 | AT26, AT27, G25, G26 | AND | `AT26;AT27;(G25#G26)` |
+| G25 | AT28 | AND | `-` |
+| G26 | AT29 | AND | `-` |
+
+---
+
+# 5. Logical relationships
+
+## Top mission relationships
+
+**G1 -> G2, G6, G7 [AND][sequential: `G2;G6;G7`]**  
+**Justification:** The mission must first define scope and robot feasibility, then ensure the high-risk timing constraint, and then execute the room-checking workflow. These are not alternatives; they are all required for the mission to be considered complete.
+
+**G2 -> G3, G4, G5 [AND][mixed: `(G3#G4);G5`]**  
+**Justification:** Occupied rooms and high-risk patients can be identified in parallel because both are information-gathering steps. Robot allocation feasibility depends on knowing the mission scope, so it comes after those queries.
+
+**G5 -> AT3, AT4, AT5 [AND][fallback: `FALLBACK(AT3,FALLBACK(AT4,AT5))`]**  
+**Justification:** The assigned robot is the primary option. If that cannot complete the mission in time, additional robots may be assigned. If no combination can complete the mission, the responsible manager must be alerted.
+
+---
+
+## Room-checking relationships
+
+**G7 -> G8, G13, G16, G24 [AND][sequential: `G8;G13;G16;G24`]**  
+**Justification:** The robot must satisfy pre-entry conditions before entering, identify the correct patient before collecting signs, perform the patient procedure, and finally mark the patient done and handle post-room duties.
+
+**G8 -> G9, G10, G11, G12 [AND][fallback: `FALLBACK(G9,G10);FALLBACK(G11,G12)`]**  
+**Justification:** Patient availability and battery sufficiency are both required before room entry. If the patient is unavailable, the robot returns in 5 minutes. If the battery is insufficient, the robot recharges and the tasks are reassigned.
+
+**G13 -> G14, G15 [OR][parallel/alternative: `G14#G15`]**  
+**Justification:** The mission says the robot may identify the correct patient either by asking or by scanning the barcode. Since no priority order is given, this is modeled as OR rather than FALLBACK.
+
+---
+
+## Patient procedure relationships
+
+**G16 -> G17, G18, G22 [AND][sequential: `G17;G18;G22`]**  
+**Justification:** The robot first prepares the patient by approaching, announcing, and instructing. Then it collects vital signs. If a necessary sign fails to be collected, failure handling is triggered.
+
+**G17 -> AT14, AT15, AT16 [AND][sequential: `AT14;AT15;AT16`]**  
+**Justification:** Once inside the room, the robot must approach the patient, announce the procedure, and provide instructions. These are complementary actions, not alternatives.
+
+**G18 -> G19, G20, G21 [AND][parallel/condition-dependent: `G19#G20#G21`]**  
+**Justification:** The required measurements depend on patient conditions. If multiple conditions apply to the same patient, the corresponding measurement goals must all be satisfied.
+
+**G19 -> AT17, AT18, AT19, AT20 [AND][parallel: `AT17#AT18#AT19#AT20`]**  
+**Justification:** Infectious-disease patients require heart rate, blood pressure, body temperature, and blood oxygenation. All four signs are necessary.
+
+**G20 -> AT21, AT22 [AND][parallel: `AT21#AT22`]**  
+**Justification:** Post-surgical patients require both heart rate and blood oxygenation.
+
+**G21 -> AT23 [AND][leaf task]**  
+**Justification:** Patients with diabetes history require blood glucose checking.
+
+---
+
+## Failure-handling relationships
+
+**G22 -> AT24, G23 [AND][sequential: `AT24;G23`]**  
+**Justification:** If collection fails, the robot first asks assessment questions. If the patient does not respond, the robot alerts the responsible nurse or doctor.
+
+**G23 -> AT25 [AND][leaf task]**  
+**Justification:** Alerting the nurse or doctor is the concrete operational task that satisfies the non-response alert goal.
+
+---
+
+## Completion and hygiene relationships
+
+**G24 -> AT26, AT27, G25, G26 [AND][sequential plus parallel: `AT26;AT27;(G25#G26)`]**  
+**Justification:** The robot marks the patient as done, proceeds to the next room, and performs applicable hygiene actions. Sterilization and actuator disinfection are condition-triggered but both may be required.
+
+**G25 -> AT28 [AND][leaf task]**  
+**Justification:** If the robot leaves a room where an infectious-disease patient is treated, sterilization is mandatory.
+
+**G26 -> AT29 [AND][leaf task]**  
+**Justification:** If patient contact occurs, actuator disinfection is mandatory.
+
+---
+
+# 6. Final model interpretation
+
+This goal model represents a **multi-robot, condition-aware, exception-handling hospital mission**. The main mission is an **Achieve goal** because it aims to reach a target state: all required patients are checked, or infeasibility is escalated. Query goals are used where the robot must obtain information, such as occupied rooms, patient availability, battery sufficiency, identity, and risk category. Perform goals are used where the mission explicitly requires concrete actions, such as approaching the patient, sending alerts, sterilizing, and disinfecting.

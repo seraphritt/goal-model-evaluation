@@ -1,0 +1,635 @@
+# Goal Model: Periodic Vital-Signs Round in a Hospital (Multi-Robot System)
+
+## Modeling notes and assumptions
+
+- **Goal IDs** (G1…G42) and **task IDs** (AT1…AT27) follow depth-first order.
+- **Leaf goals** use "-" as runtime and are operationalized by tasks.
+- **Relation column:** for a goal, it is the decomposition over its children. For a task, it is the decomposition it takes part in under its parent goal.
+- **Per-instance goals:** G6 is instantiated for each room in `RoomQueue`, and G16 for each patient/bed in the room.
+- **Conditional goals:** goals guarded by a condition (e.g., "if X ∈ RequiredSigns") are trivially satisfied when the condition is false.
+- **Availability check:** this happens before entering the room, so it uses the patient record or bedside/door interaction, not the barcode.
+- **Retry after unavailability:** the description does not say what happens after repeated unavailability. The model keeps retrying, and the time-feasibility goal G39 covers deadline risk.
+- **Fleet size:** up to 3 additional robots (`[1,3]`) is my assumption.
+
+---
+
+## Goals
+
+**G1**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G1: Complete vital-signs round | Every 2 hours, check the vital signs of all patients in occupied rooms | G2 ; G5 | Achieve — Target: `∀ patient ∈ occupiedRooms: status = Checked` within the 2-hour cycle | AND |
+
+Justification: the mission specifies a world state to reach (all patients checked) in each cycle.
+
+**G2**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G2: Plan the round | Find out who must be visited and assign/order the visits | G3 ; G4 | Achieve — Target: `RoomQueue` is defined, ordered and allocated to robots | AND |
+
+Justification: the round can start only when a plan exists, which is a target state.
+
+**G3**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G3: Identify rooms and patient profiles | Retrieve occupied rooms, beds, and each patient's conditions and risk level | - | Query — Enquired information: `OccupiedRooms`, beds per room, conditions (infectious, post-surgical, diabetic), risk level | AND |
+
+Justification: it only retrieves information and causes no change in the environment.
+
+**G4**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G4: Allocate and order visits | Assign rooms to robots, with high-risk patients first | - | Achieve — Target: every room assigned to a robot and all high-risk rooms scheduled in the first 15 min | AND |
+
+Justification: the mission requires the world state "high-risk patients are checked in the first 15 minutes".
+
+**G5**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G5: Execute the round | Carry out the visits while guaranteeing the time constraints | G6 # G39 | Achieve — Target: all rooms visited and time constraints satisfied (or manager alerted) | AND |
+
+Justification: it is defined by its outcome. Visiting and time supervision must run concurrently.
+
+**G6**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G6: Visit rooms and check patients | For each room in `RoomQueue`: prepare, check its patients and conclude | G7 ; G16 ; G36 | Achieve — Target: every patient in `PatientRoom` marked Checked | AND |
+
+Justification: success is the state "all patients of the room checked".
+
+**G7**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G7: Prepare room visit | Before entering, ensure the patient is available and battery suffices | G8 # G11 | Achieve — Target: `patientAvailable ∧ battery ≥ energyRequired(PatientRoom)` | AND |
+
+Justification: entry is allowed only under a target condition.
+
+**G8**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G8: Ensure patient availability | Confirm availability, or return in 5 minutes | FALLBACK(G9, G10) | Achieve — Target: `patientAvailable = true` | OR |
+
+Justification: the desired state is an available patient. If not met, the recovery is to retry.
+
+**G9**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G9: Check patient availability | Ask whether the patient can be checked now | - | Query — Enquired information: `patientAvailable` (yes/no) | AND |
+
+Justification: it retrieves a yes/no answer and does not change the world.
+
+**G10**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G10: Return after 5 minutes | Leave and come back to the room after 5 minutes | - | Perform | AND |
+
+Justification: "come back in 5 minutes" is an activity whose success depends only on executing it. Availability is re-evaluated by G9.
+
+**G11**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G11: Ensure sufficient battery | Confirm battery covers all tasks in the room, or recharge and reassign | FALLBACK(G12, G13) | Achieve — Target: `battery ≥ energyRequired(PatientRoom)` | OR |
+
+Justification: the required state is enough energy. Otherwise a recovery is triggered.
+
+**G12**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G12: Check battery sufficiency | Compare battery level with the energy needed for the room's tasks | - | Query — Enquired information: `batteryLevel`, `energyRequired(PatientRoom)`, sufficient (yes/no) | AND |
+
+Justification: it only retrieves internal state.
+
+**G13**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G13: Recharge and reassign | Recharge the robot while its pending tasks are handed to another robot | G14 # G15 | Achieve — Target: `battery ≥ threshold ∧ pendingTasks reassigned` | AND |
+
+Justification: both outcomes are target states, and they can progress in parallel.
+
+**G14**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G14: Recharge robot | Go to a charging station and recharge | - | Achieve — Target: `battery ≥ threshold` | AND |
+
+Justification: the goal is a battery state.
+
+**G15**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G15: Reassign pending tasks | Reallocate the robot's remaining tasks to robots with enough battery | - | Achieve — Target: every pending task allocated to a robot with sufficient battery | AND |
+
+Justification: a resulting allocation state is required.
+
+**G16**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G16: Check patient in room | For each patient/bed: identify, inform, measure, disinfect, register | G17 ; G20 ; G21 ; G22 ; G23 ; G24 ; G34 ; G35 | Achieve — Target: patient identified ∧ vital-signs status obtained ∧ patient marked Checked | AND |
+
+Justification: it is defined by its final state.
+
+**G17**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G17: Identify patient | Identify the correct patient in the bed by barcode, or by asking | FALLBACK(G18, G19) | Query — Enquired information: `patientId` in `PatientBed`, matched with the expected record | OR |
+
+Justification: the purpose is to obtain the patient's identity. Barcode is tried first as it is unambiguous, and asking is the fallback.
+
+**G18**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G18: Scan patient barcode | Scan the patient's wristband barcode | - | Query — Enquired information: `patientId` from barcode | AND |
+
+Justification: it retrieves an identifier.
+
+**G19**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G19: Ask patient identity | Ask the patient to state name/ID | - | Query — Enquired information: `patientId` from patient's answer | AND |
+
+Justification: it retrieves an identifier verbally.
+
+**G20**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G20: Determine required signs | Derive the signs to measure from the patient's conditions | - | Query — Enquired information: `RequiredSigns` = union of {HR, BP, Temp, SpO₂} if infectious; {HR, SpO₂} if post-surgical; {Glucose} if diabetic | AND |
+
+Justification: it derives information from the record. The union handles patients with several conditions.
+
+**G21**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G21: Approach patient | Move next to the identified patient's bed | - | Achieve — Target: `distance(robot, patient) ≤ interactionRange` | AND |
+
+Justification: a target spatial condition exists.
+
+**G22**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G22: Announce procedure | Tell the patient which procedure will be performed | - | Perform | AND |
+
+Justification: success depends only on performing the announcement.
+
+**G23**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G23: Instruct patient | Give the patient instructions for the measurements | - | Perform | AND |
+
+Justification: success depends only on giving the instructions.
+
+**G24**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G24: Obtain vital-signs status | Measure all required signs; if any fails, assess the failed ones | FALLBACK(G25, G31) | Achieve — Target: `∀ s ∈ RequiredSigns: value(s) collected ∨ status(s) assessed ∨ staff alerted` | OR |
+
+Justification: the required world state is complete information on the patient. The fallback handles measurement failure.
+
+**G25**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G25: Measure required signs | Measure every sign in `RequiredSigns` | G26 # G27 # G28 # G29 # G30 | Achieve — Target: `∀ s ∈ RequiredSigns: value(s) collected` | AND |
+
+Justification: the target is all values obtained. If any fails, the fallback G31 applies.
+
+**G26**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G26: Measure heart rate | Measure HR (if HR ∈ `RequiredSigns`) | - | Achieve — Target: `HR value collected` | AND |
+
+Justification: a data state is to be reached.
+
+**G27**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G27: Measure blood pressure | Measure BP (if BP ∈ `RequiredSigns`) | - | Achieve — Target: `BP value collected` | AND |
+
+Justification: a data state is to be reached.
+
+**G28**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G28: Measure body temperature | Measure temperature (if Temp ∈ `RequiredSigns`) | - | Achieve — Target: `Temp value collected` | AND |
+
+Justification: a data state is to be reached.
+
+**G29**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G29: Measure blood oxygenation | Measure SpO₂ (if SpO₂ ∈ `RequiredSigns`) | - | Achieve — Target: `SpO₂ value collected` | AND |
+
+Justification: a data state is to be reached.
+
+**G30**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G30: Measure blood glucose | Measure glucose (if Glucose ∈ `RequiredSigns`) | - | Achieve — Target: `Glucose value collected` | AND |
+
+Justification: a data state is to be reached.
+
+**G31**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G31: Assess non-collected signs | For signs in `FailedSigns`, ask assessment questions; alert staff if no response | FALLBACK(G32, G33) | Achieve — Target: `∀ s ∈ FailedSigns: status(s) assessed ∨ responsible staff alerted` | OR |
+
+Justification: the target is a resolved status for each failed sign, either by answers or by escalation.
+
+**G32**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G32: Ask assessment questions | Ask questions about the patient's condition for each failed sign | - | Query — Enquired information: patient's answers on the state related to each sign in `FailedSigns` | AND |
+
+Justification: it retrieves information from the patient.
+
+**G33**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G33: Alert nurse/doctor | Notify the responsible nurse/doctor of the missing signs and non-response | - | Achieve — Target: `responsibleStaff notified` | AND |
+
+Justification: the goal is a state where staff know about the situation.
+
+**G34**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G34: Disinfect actuators | If the patient was touched, disinfect the actuators afterwards | - | Achieve — Target: `actuatorsDisinfected = true` (trivial if `contactOccurred = false`) | AND |
+
+Justification: the required state is clean actuators. It runs after each patient, which avoids cross-contamination in multi-bed rooms.
+
+**G35**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G35: Mark patient as checked | Register the patient as done | - | Achieve — Target: `status(patient) = Checked` | AND |
+
+Justification: the mission states a status change.
+
+**G36**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G36: Conclude room visit | Sterilize if needed, then proceed to the next room | G37 ; G38 | Achieve — Target: robot clean (if required) ∧ robot at `NextRoom` | AND |
+
+Justification: it is defined by the state at exit.
+
+**G37**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G37: Sterilize robot | After leaving a room with an infectious patient, sterilize the robot | - | Achieve — Target: `robotSterilized = true` (trivial if the room had no infectious patient) | AND |
+
+Justification: the required state is a sterilized robot.
+
+**G38**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G38: Move to next room | Proceed to the next room in `RoomQueue` | - | Achieve — Target: `position(robot) = NextRoom` | AND |
+
+Justification: a location state is required.
+
+**G39**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G39: Ensure timely completion | Guarantee deadlines by verification, reinforcement, or manager alert | FALLBACK(G40, FALLBACK(G41, G42)) | Achieve — Target: deadlines feasible (round in the required time, high-risk within 15 min) ∨ manager alerted | OR |
+
+Justification: the target is a guaranteed schedule or an escalation, with alternatives tried in order.
+
+**G40**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G40: Verify time feasibility | Check that the current robots can meet the deadlines | - | Query — Enquired information: estimated completion time vs. deadline, and high-risk arrival time vs. 15 min | AND |
+
+Justification: it only computes and retrieves an estimate.
+
+**G41**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G41: Assign additional robots | Add robots to help the mission | - | Achieve — Target: a robot combination exists that meets the deadlines | AND |
+
+Justification: the required state is a feasible team.
+
+**G42**
+
+| Name | Text | Runtime | Goal Type | Relation |
+|---|---|---|---|---|
+| G42: Alert site manager | Notify the manager that no robot combination can complete the mission | - | Achieve — Target: `siteManager notified` | AND |
+
+Justification: the goal is a notification state.
+
+---
+
+## Tasks
+
+**AT1**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT1: Query hospital records | Retrieve occupied rooms, beds, conditions and risk levels | AND (G3) | Hospital – `WardControlRoom` | 1 |
+
+**AT2**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT2: Compute allocation and order | Build `RoomQueue` with high-risk first and assign rooms to robots | AND (G4) | Hospital – `WardControlRoom` | 1 |
+
+**AT3**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT3: Ask patient availability | Query patient availability from record or bedside/door interaction | AND (G9) | Hospital – `RoomEntrance` | 1 |
+
+**AT4**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT4: Wait and return | Wait 5 minutes and return to the room entrance | AND (G10) | Hospital – `RoomEntrance` | 1 |
+
+**AT5**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT5: Estimate energy need | Compare battery level with the estimated room energy | AND (G12) | Hospital – `RoomEntrance` | 1 |
+
+**AT6**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT6: Go to charger and recharge | Navigate to the charging station and recharge | AND (G14) | Hospital – `ChargingStation` | 1 |
+
+**AT7**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT7: Redistribute tasks | Transfer pending tasks to robots with enough battery | AND (G15) | Hospital – `WardControlRoom` | 1 |
+
+**AT8**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT8: Scan barcode | Scan wristband barcode and match to the record | AND (G18) | Hospital – `PatientBed` | 1 |
+
+**AT9**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT9: Ask identity | Ask for name/ID and match to the record | AND (G19) | Hospital – `PatientBed` | 1 |
+
+**AT10**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT10: Compute required signs | Apply the condition rules and take the union | AND (G20) | Hospital – `PatientBed` | 1 |
+
+**AT11**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT11: Navigate to bed | Move within interaction range of the patient | AND (G21) | Hospital – `PatientBed` | 1 |
+
+**AT12**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT12: Announce procedure | Verbally announce the procedure | AND (G22) | Hospital – `PatientBed` | 1 |
+
+**AT13**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT13: Give instructions | Instruct the patient on positioning/cooperation | AND (G23) | Hospital – `PatientBed` | 1 |
+
+**AT14**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT14: Read heart rate | Acquire HR with the sensor | AND (G26) | Hospital – `PatientBed` | 1 |
+
+**AT15**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT15: Read blood pressure | Apply cuff and read BP | AND (G27) | Hospital – `PatientBed` | 1 |
+
+**AT16**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT16: Read temperature | Acquire body temperature | AND (G28) | Hospital – `PatientBed` | 1 |
+
+**AT17**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT17: Read SpO₂ | Acquire blood oxygenation | AND (G29) | Hospital – `PatientBed` | 1 |
+
+**AT18**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT18: Read glucose | Acquire blood glucose (contact) | AND (G30) | Hospital – `PatientBed` | 1 |
+
+**AT19**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT19: Ask status questions | Ask the question set for each sign in `FailedSigns` and record answers | AND (G32) | Hospital – `PatientBed` | 1 |
+
+**AT20**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT20: Send staff alert | Send an alert to the responsible nurse/doctor | AND (G33) | Hospital – `NurseStation` | 1 |
+
+**AT21**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT21: Disinfect actuators | Run the disinfection routine on the actuators used for contact | AND (G34) | Hospital – `PatientBed` | 1 |
+
+**AT22**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT22: Update patient status | Set the patient to Checked in the hospital system | AND (G35) | Hospital – `PatientBed` | 1 |
+
+**AT23**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT23: Run sterilization | Execute robot sterilization when leaving an infectious room | AND (G37) | Hospital – `SterilizationPoint` | 1 |
+
+**AT24**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT24: Navigate to next room | Move to the next room in the queue | AND (G38) | Hospital – `NextRoom` | 1 |
+
+**AT25**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT25: Estimate completion time | Estimate remaining time and high-risk arrival time | AND (G40) | Hospital – `WardControlRoom` | 1 |
+
+**AT26**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT26: Deploy extra robots | Allocate additional robots to the remaining rooms | AND (G41) | Hospital – `RemainingRooms` | [1,3] |
+
+**AT27**
+
+| Name | Text | Relation | Location | Number of Robots |
+|---|---|---|---|---|
+| AT27: Send manager alert | Notify the manager that the mission is infeasible | AND (G42) | Hospital – `SiteManagerOffice` | 1 |
+
+---
+
+## Monitored variables
+
+| Variable | Monitored by (parent goal) |
+|---|---|
+| `WardControlRoom` | G3, G4, G15, G40, G41 |
+| `RoomEntrance` | G9, G10, G12 |
+| `ChargingStation` | G14 |
+| `PatientBed`, `RequiredSigns`, `FailedSigns`, `contactOccurred` | G16 (and its children G18–G35) |
+| `NurseStation` | G33 |
+| `SterilizationPoint` | G37 |
+| `NextRoom`, `RoomQueue` | G6, G38 |
+| `RemainingRooms` | G41 |
+| `SiteManagerOffice` | G42 |
+
+---
+
+## Summary
+
+| ID | Type | Name | Runtime | Relation | Children |
+|---|---|---|---|---|---|
+| G1 | Achieve | Complete vital-signs round | ; | AND | G2, G5 |
+| G2 | Achieve | Plan the round | ; | AND | G3, G4 |
+| G3 | Query | Identify rooms and patient profiles | - | AND | AT1 |
+| G4 | Achieve | Allocate and order visits | - | AND | AT2 |
+| G5 | Achieve | Execute the round | # | AND | G6, G39 |
+| G6 | Achieve | Visit rooms and check patients | ; | AND | G7, G16, G36 |
+| G7 | Achieve | Prepare room visit | # | AND | G8, G11 |
+| G8 | Achieve | Ensure patient availability | FALLBACK | OR | G9, G10 |
+| G9 | Query | Check patient availability | - | AND | AT3 |
+| G10 | Perform | Return after 5 minutes | - | AND | AT4 |
+| G11 | Achieve | Ensure sufficient battery | FALLBACK | OR | G12, G13 |
+| G12 | Query | Check battery sufficiency | - | AND | AT5 |
+| G13 | Achieve | Recharge and reassign | # | AND | G14, G15 |
+| G14 | Achieve | Recharge robot | - | AND | AT6 |
+| G15 | Achieve | Reassign pending tasks | - | AND | AT7 |
+| G16 | Achieve | Check patient in room | ; | AND | G17, G20–G24, G34, G35 |
+| G17 | Query | Identify patient | FALLBACK | OR | G18, G19 |
+| G18 | Query | Scan patient barcode | - | AND | AT8 |
+| G19 | Query | Ask patient identity | - | AND | AT9 |
+| G20 | Query | Determine required signs | - | AND | AT10 |
+| G21 | Achieve | Approach patient | - | AND | AT11 |
+| G22 | Perform | Announce procedure | - | AND | AT12 |
+| G23 | Perform | Instruct patient | - | AND | AT13 |
+| G24 | Achieve | Obtain vital-signs status | FALLBACK | OR | G25, G31 |
+| G25 | Achieve | Measure required signs | # | AND | G26–G30 |
+| G26 | Achieve | Measure heart rate | - | AND | AT14 |
+| G27 | Achieve | Measure blood pressure | - | AND | AT15 |
+| G28 | Achieve | Measure body temperature | - | AND | AT16 |
+| G29 | Achieve | Measure blood oxygenation | - | AND | AT17 |
+| G30 | Achieve | Measure blood glucose | - | AND | AT18 |
+| G31 | Achieve | Assess non-collected signs | FALLBACK | OR | G32, G33 |
+| G32 | Query | Ask assessment questions | - | AND | AT19 |
+| G33 | Achieve | Alert nurse/doctor | - | AND | AT20 |
+| G34 | Achieve | Disinfect actuators | - | AND | AT21 |
+| G35 | Achieve | Mark patient as checked | - | AND | AT22 |
+| G36 | Achieve | Conclude room visit | ; | AND | G37, G38 |
+| G37 | Achieve | Sterilize robot | - | AND | AT23 |
+| G38 | Achieve | Move to next room | - | AND | AT24 |
+| G39 | Achieve | Ensure timely completion | FALLBACK | OR | G40, G41, G42 |
+| G40 | Query | Verify time feasibility | - | AND | AT25 |
+| G41 | Achieve | Assign additional robots | - | AND | AT26 |
+| G42 | Achieve | Alert site manager | - | AND | AT27 |
+
+---
+
+## Logical relationships
+
+**Goals**
+
+- **G1 -> G2, G5 [AND][sequential]**
+- **G2 -> G3, G4 [AND][sequential]**
+- **G5 -> G6, G39 [AND][parallel]**
+- **G6 -> G7, G16, G36 [AND][sequential]**
+- **G7 -> G8, G11 [AND][parallel]**
+- **G8 -> G9, G10 [OR][FALLBACK(G9, G10)]**
+- **G11 -> G12, G13 [OR][FALLBACK(G12, G13)]**
+- **G13 -> G14, G15 [AND][parallel]**
+- **G16 -> G17, G20, G21, G22, G23, G24, G34, G35 [AND][sequential]**
+- **G17 -> G18, G19 [OR][FALLBACK(G18, G19)]**
+- **G24 -> G25, G31 [OR][FALLBACK(G25, G31)]**
+- **G25 -> G26, G27, G28, G29, G30 [AND][parallel]**
+- **G31 -> G32, G33 [OR][FALLBACK(G32, G33)]**
+- **G36 -> G37, G38 [AND][sequential]**
+- **G39 -> G40, G41, G42 [OR][FALLBACK(G40, FALLBACK(G41, G42))]**
+
+**Goal-to-task relations**
+
+- **G3 -> AT1 [AND]**
+- **G4 -> AT2 [AND]**
+- **G9 -> AT3 [AND]**
+- **G10 -> AT4 [AND]**
+- **G12 -> AT5 [AND]**
+- **G14 -> AT6 [AND]**
+- **G15 -> AT7 [AND]**
+- **G18 -> AT8 [AND]**
+- **G19 -> AT9 [AND]**
+- **G20 -> AT10 [AND]**
+- **G21 -> AT11 [AND]**
+- **G22 -> AT12 [AND]**
+- **G23 -> AT13 [AND]**
+- **G26 -> AT14 [AND]**
+- **G27 -> AT15 [AND]**
+- **G28 -> AT16 [AND]**
+- **G29 -> AT17 [AND]**
+- **G30 -> AT18 [AND]**
+- **G32 -> AT19 [AND]**
+- **G33 -> AT20 [AND]**
+- **G34 -> AT21 [AND]**
+- **G35 -> AT22 [AND]**
+- **G37 -> AT23 [AND]**
+- **G38 -> AT24 [AND]**
+- **G40 -> AT25 [AND]**
+- **G41 -> AT26 [AND]**
+- **G42 -> AT27 [AND]**
