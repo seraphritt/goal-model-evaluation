@@ -1,0 +1,207 @@
+## 1. Modeling rationale and assumptions
+
+I will provide explicit modeling rationale rather than hidden chain-of-thought. The mission naturally decomposes into four major intentions:
+
+1. **Prepare the sample delivery request and sample identity data**: barcode identification, track-system data, and nurse request.
+2. **Transport the sample securely**: locked drawer use, controlled opening, and movement from patient floors to laboratory.
+3. **Handle the sample in the laboratory**: the sample may be picked either by a robotic arm or by laboratory personnel.
+4. **Maintain traceability and timing compliance**: log where/when pickup happens and track collection-to-delivery time against lab protocols.
+
+Important modeling choices:
+
+- **No FALLBACK relation is used** because the description gives alternatives, but does not specify a failure-triggered ordering such as “try robotic arm first; if it fails, use personnel.” Therefore, alternatives are modeled as **OR decompositions**, not fallback.
+- The laboratory pickup alternative is modeled as **OR** because the sample “can be picked by a robotic arm or laboratory personnel.”
+- Drawer opening by authorized personnel or specific robots is also modeled as **OR**, because either authorized personnel or specific robots may open drawers, provided they are in specific locations.
+- The robotic-arm process is modeled as **sequential** because the description explicitly orders the activities: the arm “picks up samples, scans the barcode, sorts, and loads” them.
+- Monitoring/logging and timing compliance are modeled as parallel-capable with the physical mission because they occur alongside the physical delivery lifecycle.
+
+---
+
+# 2. Goal table
+
+| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
+|---|---|---:|---|---|---|---|
+| **G1: Secure Traceable Sample Delivery** | Ensure lab samples are transported from patient floors to the laboratory securely, traceably, and according to protocol timing. | `((G2;G6;G12)#G23)` | Achieve | Target: requested samples are delivered from patient floors to laboratory with secure drawer use, lab handling, secure logging, and timing compliance. | AND → G2, G6, G12, G23 | This is an achieve goal because the mission intends a final state: samples delivered and traceable. Preparation, transport, lab handling, and tracking are all required. Traceability/timing can run alongside the physical flow. |
+| **G2: Prepare Sample Request and Data** | Ensure the sample has barcode identity, track-system data, and a delivery request to the laboratory. | `G3;(G4#G5)` | Achieve | Target: sample is identifiable and has enough track-system/request data for delivery. | AND child of G1; AND → G3, G4, G5 | The description states barcode identification, data insertion, and nurse request. Barcode is explicitly before collection; data insertion and request have no strict mutual order, so they may be parallel after barcode identity exists. |
+| **G3: Barcode Identify Sample** | Ensure each sample is identified with a barcode before collection. | `-` | Achieve | Target: sample has a barcode before collection. | AND child of G2 | The description explicitly says each sample before collection is identified with a barcode. This is a state to be achieved, not merely queried. |
+| **G4: Register Sample Data** | Ensure the nurse-entered sample data is stored in the track system. | `-` | Achieve | Target: sample data is present in the track system. | AND child of G2 | The description says the nurse inserts data about the sample in a track system. The relevant modeled state is that the data exists and is usable. |
+| **G5: Acquire Delivery Request** | Obtain the nurse’s request for delivery to the laboratory and the associated sample/destination information. | `AT1;AT2` | Query | QueriedProperty: `delivery_request(sample_id, destination=laboratory)` | AND child of G2; AND → AT1, AT2 | This is a query goal because the delivery system must obtain information from the request/track system rather than change the physical world. |
+| **G6: Transport in Locked Drawer** | Transport the sample from patient floors to the laboratory using secure locked drawers. | `G7;G10;G11` | Achieve | Target: sample is loaded, secured in a locked drawer, and delivered to the laboratory. | AND child of G1; AND → G7, G10, G11 | The description requires secure locked drawers and transport from patient floors to laboratory. Drawer access, locking, and transportation are all necessary and sequential. |
+| **G7: Control Loading Drawer Opening** | Ensure the drawer opening for loading on patient floors is performed only by authorized personnel or a specific robot in the permitted location. | `G8#G9` | Achieve | Target: loading drawer opening complies with authorization/location policy. | AND child of G6; OR → G8, G9 | The description says only authorized personnel or specific robots in specific locations should open drawers. Either route is sufficient, hence OR. No failure order is stated, so no fallback. |
+| **G8: Authorized Personnel Loading Access** | Allow authorized personnel on patient floors to open/access the locked drawer for sample loading. | `AT3;AT4` | Perform | — | OR child of G7; AND → AT3, AT4 | This is a perform goal because the important action is executing the authorization and unlock/open operation for authorized personnel. |
+| **G9: Specific Robot Loading Access** | Allow a specific robot in the patient-floor location to open the locked drawer for loading. | `AT5;AT6` | Perform | — | OR child of G7; AND → AT5, AT6 | This is a perform goal because the robot must execute credential verification and drawer opening. |
+| **G10: Secure Sample in Drawer** | Ensure the sample is inside the drawer and the drawer is locked for transit. | `AT7;AT8` | Achieve | Target: sample is contained in a locked drawer before transport. | AND child of G6; AND → AT7, AT8 | Secure locked-drawer transport requires the drawer to contain the sample and be locked before movement. |
+| **G11: Deliver Locked Drawer to Laboratory** | Move the locked sample drawer from patient floors to the laboratory while preserving the locked state. | `AT9#AT10` | Achieve | Target: locked drawer containing the sample arrives at the laboratory. | AND child of G6; AND → AT9, AT10 | Transportation and lock-state monitoring are complementary. Monitoring can occur in parallel with navigation. |
+| **G12: Complete Laboratory Receipt and Handling** | Ensure the sample is accessed in the laboratory and then picked/handled by an allowed laboratory path. | `G13;G16` | Achieve | Target: laboratory drawer access is controlled and the sample is picked/handled. | AND child of G1; AND → G13, G16 | The lab phase requires controlled drawer opening before pickup/handling. |
+| **G13: Control Laboratory Drawer Opening** | Ensure laboratory drawer opening is performed only by authorized personnel or a specific robot in the laboratory. | `G14#G15` | Achieve | Target: lab drawer opening complies with authorization/location policy. | AND child of G12; OR → G14, G15 | Same policy from the description, applied at the laboratory location. Either authorized personnel or specific robots may open drawers. |
+| **G14: Authorized Personnel Lab Access** | Allow authorized laboratory personnel to open/access the drawer in the laboratory. | `AT11;AT12` | Perform | — | OR child of G13; AND → AT11, AT12 | The action is authorization checking and drawer opening for authorized personnel. |
+| **G15: Specific Robot Lab Access** | Allow a specific authorized robot in the laboratory to open the locked drawer. | `AT13;AT14` | Perform | — | OR child of G13; AND → AT13, AT14 | The description permits specific robots in specific locations to open drawers. |
+| **G16: Pick and Handle Laboratory Sample** | Ensure the sample is picked in the laboratory either by robotic arm or laboratory personnel. | `G17#G22` | Achieve | Target: sample is removed/picked from the drawer by an allowed laboratory actor. | AND child of G12; OR → G17, G22 | The text explicitly states the sample can be picked by a robotic arm or laboratory personnel, so this is an OR decomposition. |
+| **G17: Robotic Arm Processing Path** | Have the robotic arm pick, scan, sort, and load samples into the analysis-machine entry-module. | `G18;G19;G20;G21` | Achieve | Target: sample is loaded into the entry-module by the robotic-arm workflow. | OR child of G16; AND → G18, G19, G20, G21 | The description lists all four robotic-arm actions in sequence: pick, scan, sort, load. |
+| **G18: Robotic Arm Pickup** | Have the robotic arm pick up the sample from the drawer. | `AT15;AT16` | Achieve | Target: sample is grasped and removed by the robotic arm. | AND child of G17; AND → AT15, AT16 | The robotic arm must first position and then physically grasp/remove the sample. |
+| **G19: Scan Sample Barcode** | Obtain the barcode value from each sample by scanning it. | `AT17;AT18` | Query | QueriedProperty: `barcode_value(sample)` | AND child of G17; AND → AT17, AT18 | Barcode scanning retrieves identifying information, so this is a query goal. |
+| **G20: Sort Sample** | Sort the sample according to its barcode/track-system information. | `AT19;AT20` | Achieve | Target: sample is assigned and placed in the correct sorted category/queue. | AND child of G17; AND → AT19, AT20 | Sorting aims to reach a physical/organizational state: sample placed in the correct category. |
+| **G21: Load Analysis Entry-Module** | Load the sorted sample into the entry-module of the analysis machines. | `AT21;AT22` | Achieve | Target: sample is inside the analysis-machine entry-module. | AND child of G17; AND → AT21, AT22 | The description explicitly says the robotic arm loads samples into the entry-module. |
+| **G22: Laboratory Personnel Pickup Path** | Support laboratory personnel pickup of the sample from the drawer. | `AT23;AT24` | Achieve | Target: sample is picked by laboratory personnel and drawer is secured afterward. | OR child of G16; AND → AT23, AT24 | The description gives personnel pickup as an allowed alternative. The robot supports/observes the pickup and re-secures the drawer. |
+| **G23: Assure Traceability and Timing** | Ensure secure logging of pickup information and tracking of collection-to-delivery time. | `G24#G25` | Achieve | Target: pickup log is securely recorded and delivery timing is assessed. | AND child of G1; AND → G24, G25 | The description requires both secure pickup logging and timing tracking. They can be monitored in parallel. |
+| **G24: Securely Log Pickup Event** | Securely log where and when a given sample was picked. | `AT25;AT26` | Achieve | Target: secure log contains sample pickup location and timestamp. | AND child of G23; AND → AT25, AT26 | The description explicitly requires secure logging of where and when the sample was picked. |
+| **G25: Track Transport Time Protocol** | Track the time between sample collection and laboratory delivery and check it against laboratory protocols. | `(G26#G27);G28` | Achieve | Target: elapsed collection-to-delivery time is known and protocol compliance is assessed. | AND child of G23; AND → G26, G27, G28 | Collection and delivery times are both needed; they may be captured independently, then compliance is evaluated afterward. |
+| **G26: Obtain Collection Time** | Obtain the time at which the sample was collected. | `AT27;AT28` | Query | QueriedProperty: `collection_timestamp(sample)` | AND child of G25; AND → AT27, AT28 | This is a query goal because the system retrieves or obtains the collection timestamp associated with the sample. |
+| **G27: Record Laboratory Delivery Time** | Record the time when the sample is delivered to the laboratory. | `AT29;AT30` | Achieve | Target: delivery timestamp is recorded for the sample. | AND child of G25; AND → AT29, AT30 | The delivery timestamp is created/recorded by the system at laboratory arrival. |
+| **G28: Evaluate Protocol Timing Compliance** | Compare the collection-to-delivery elapsed time with laboratory protocol limits. | `AT31;AT32` | Achieve | Target: elapsed time is verified against protocol and violations are flagged. | AND child of G25; AND → AT31, AT32 | The description says timing should be tracked to ensure it follows laboratory protocols. |
+
+---
+
+# 3. Task table
+
+| Name | Text | Relation | Location | Number of Robots | Justification |
+|---|---|---|---|---:|---|
+| **AT1: Receive Nurse Request** | Receive or monitor the nurse’s delivery request for a sample. | AND child of G5 | patient floors | 1 | The request originates from the nurse responsible for collection on patient floors. One delivery robot or robot-side mission manager can receive the request. |
+| **AT2: Retrieve Request Data** | Retrieve sample identifier and laboratory destination from the track system. | AND child of G5 | patient floors | 1 | The track-system information is needed before dispatch; one robot/system instance is sufficient. |
+| **AT3: Verify Loading Personnel Authorization** | Verify that the person requesting drawer access for loading is authorized. | AND child of G8 | patient floors | 1 | The description restricts drawer opening to authorized personnel or specific robots. One robot can perform credential/access verification. |
+| **AT4: Unlock Drawer for Personnel Loading** | Unlock/open the drawer for authorized personnel to load the sample. | AND child of G8 | patient floors | 1 | The drawer must be opened only after authorization. One delivery robot with a locked drawer is sufficient. |
+| **AT5: Verify Robot Loading Credential** | Verify that the robot opening the drawer is a permitted robot at the patient-floor location. | AND child of G9 | patient floors | 1 | The description allows only specific robots in specific locations to open drawers. |
+| **AT6: Robot Opens Drawer for Loading** | The specific robot opens the secure drawer for sample loading. | AND child of G9 | patient floors | 1 | One specific delivery robot can open its drawer once authorization/location constraints are satisfied. |
+| **AT7: Confirm Sample in Drawer** | Confirm that the sample has been placed inside the secure drawer. | AND child of G10 | patient floors | 1 | Locked-drawer transport requires the sample to be inside the drawer before locking. |
+| **AT8: Lock Drawer for Transit** | Lock the drawer containing the sample before transport. | AND child of G10 | patient floors | 1 | The description requires secure locked drawers; one delivery robot can lock its drawer. |
+| **AT9: Transport Drawer to Laboratory** | Move the locked drawer containing the sample from patient floors to the laboratory. | AND child of G11 | patient floors to laboratory | 1 | The core transport action is from patient floors to laboratory. One delivery robot per drawer/sample delivery is sufficient. |
+| **AT10: Monitor Drawer Locked State** | Monitor that the drawer remains locked during transport. | AND child of G11 | patient floors to laboratory | 1 | Secure transport requires the drawer to remain locked; monitoring can occur while the same robot navigates. |
+| **AT11: Verify Lab Personnel Authorization** | Verify that laboratory personnel requesting access are authorized. | AND child of G14 | laboratory | 1 | The description allows authorized personnel to open drawers. One robot/access-control unit can verify authorization. |
+| **AT12: Unlock Drawer for Lab Personnel** | Unlock/open the drawer in the laboratory for authorized laboratory personnel. | AND child of G14 | laboratory | 1 | Drawer access in the lab must follow authorization constraints. |
+| **AT13: Verify Lab Robot Credential** | Verify that the robot opening the drawer is a permitted robot in the laboratory. | AND child of G15 | laboratory | 1 | The description permits specific robots in specific locations to open drawers. |
+| **AT14: Robot Opens Lab Drawer** | The specific robot opens the locked drawer in the laboratory. | AND child of G15 | laboratory | 1 | One authorized robot can perform drawer opening in the laboratory. |
+| **AT15: Position Robotic Arm** | Position the robotic arm near the opened drawer/sample. | AND child of G18 | laboratory | 1 | Robotic pickup requires positioning the arm before grasping. The description mentions a robotic arm in the laboratory. |
+| **AT16: Grasp and Remove Sample** | Grasp the sample and remove it from the drawer. | AND child of G18 | laboratory | 1 | The robotic arm picks up samples; one arm is sufficient for one sample handling operation. |
+| **AT17: Scan Barcode** | Scan the barcode attached to the sample. | AND child of G19 | laboratory | 1 | The description explicitly says the robotic arm scans the barcode in each sample. |
+| **AT18: Associate Barcode with Record** | Associate the scanned barcode value with the track-system sample record. | AND child of G19 | laboratory | 1 | Barcode scanning is useful only if linked to the sample’s data/track-system record. |
+| **AT19: Determine Sorting Destination** | Determine how the sample should be sorted based on barcode/record information. | AND child of G20 | laboratory | 1 | Sorting requires deciding the proper category or destination. |
+| **AT20: Place in Sorted Queue** | Place the sample in the correct sorted position or queue. | AND child of G20 | laboratory | 1 | The robotic arm sorts samples; one robotic arm can place the sample accordingly. |
+| **AT21: Move Sample to Entry-Module** | Move the sorted sample to the entry-module of the analysis machines. | AND child of G21 | entry-module of the analysis machines | 1 | The destination is explicitly stated as the entry-module of analysis machines. |
+| **AT22: Load Sample into Entry-Module** | Release/load the sample into the entry-module. | AND child of G21 | entry-module of the analysis machines | 1 | Completes the robotic-arm loading operation described in the mission. |
+| **AT23: Present Drawer and Observe Personnel Pickup** | Present the opened drawer and observe/confirm laboratory personnel pickup. | AND child of G22 | laboratory | 1 | The sample may be picked by lab personnel; one robot can supervise/confirm this allowed manual pickup. |
+| **AT24: Re-secure Drawer After Pickup** | Close and re-secure the drawer after personnel pickup. | AND child of G22 | laboratory | 1 | Maintaining drawer security after access follows from the secure locked-drawer requirement. |
+| **AT25: Capture Pickup Location and Time** | Capture the location and timestamp of sample pickup. | AND child of G24 | laboratory | 1 | The description requires logging where and when a sample was picked. Pickup occurs in the laboratory. |
+| **AT26: Write Secure Pickup Log** | Write the pickup location/time information to a secure log. | AND child of G24 | laboratory | 1 | The log must be secure according to the description. One robot/system component can submit the secure log. |
+| **AT27: Retrieve Collection Timestamp** | Retrieve the time when the sample was collected. | AND child of G26 | patient floors | 1 | The collection event occurs on patient floors, and its timestamp is needed for timing calculation. |
+| **AT28: Link Collection Time to Barcode** | Associate the collection timestamp with the barcode/sample identifier. | AND child of G26 | patient floors | 1 | Barcode identity and timing must be linked to track the correct sample. |
+| **AT29: Detect Laboratory Delivery** | Detect that the sample/drawer has arrived at the laboratory. | AND child of G27 | laboratory | 1 | Delivery time must be recorded when the sample reaches the laboratory. |
+| **AT30: Record Delivery Timestamp** | Record the laboratory delivery timestamp for the sample. | AND child of G27 | laboratory | 1 | Required to compute collection-to-delivery elapsed time. |
+| **AT31: Compute Elapsed Time** | Compute the elapsed time between collection and laboratory delivery. | AND child of G28 | laboratory | 1 | Timing compliance requires the interval between collection and delivery. |
+| **AT32: Compare Time with Protocols** | Compare elapsed time with laboratory protocol limits and flag violations. | AND child of G28 | laboratory | 1 | The description says the time should be tracked to ensure it follows laboratory protocols. |
+
+---
+
+# 4. Summary tree table
+
+| Parent | Decomposition | Runtime | Children |
+|---|---|---|---|
+| G1 | AND | `((G2;G6;G12)#G23)` | G2, G6, G12, G23 |
+| G2 | AND | `G3;(G4#G5)` | G3, G4, G5 |
+| G5 | AND | `AT1;AT2` | AT1, AT2 |
+| G6 | AND | `G7;G10;G11` | G7, G10, G11 |
+| G7 | OR | `G8#G9` | G8, G9 |
+| G8 | AND | `AT3;AT4` | AT3, AT4 |
+| G9 | AND | `AT5;AT6` | AT5, AT6 |
+| G10 | AND | `AT7;AT8` | AT7, AT8 |
+| G11 | AND | `AT9#AT10` | AT9, AT10 |
+| G12 | AND | `G13;G16` | G13, G16 |
+| G13 | OR | `G14#G15` | G14, G15 |
+| G14 | AND | `AT11;AT12` | AT11, AT12 |
+| G15 | AND | `AT13;AT14` | AT13, AT14 |
+| G16 | OR | `G17#G22` | G17, G22 |
+| G17 | AND | `G18;G19;G20;G21` | G18, G19, G20, G21 |
+| G18 | AND | `AT15;AT16` | AT15, AT16 |
+| G19 | AND | `AT17;AT18` | AT17, AT18 |
+| G20 | AND | `AT19;AT20` | AT19, AT20 |
+| G21 | AND | `AT21;AT22` | AT21, AT22 |
+| G22 | AND | `AT23;AT24` | AT23, AT24 |
+| G23 | AND | `G24#G25` | G24, G25 |
+| G24 | AND | `AT25;AT26` | AT25, AT26 |
+| G25 | AND | `(G26#G27);G28` | G26, G27, G28 |
+| G26 | AND | `AT27;AT28` | AT27, AT28 |
+| G27 | AND | `AT29;AT30` | AT29, AT30 |
+| G28 | AND | `AT31;AT32` | AT31, AT32 |
+
+Leaf goals with no task decomposition: **G3, G4**. They represent nurse/track-system states explicitly required by the mission and are treated as mission preconditions/state goals for the robot delivery workflow.
+
+---
+
+# 5. Logical relationships
+
+- **G1 → G2, G6, G12, G23 [AND][`((G2;G6;G12)#G23)`]**  
+  - **Justification**: The complete mission requires preparation, secure transport, laboratory handling, and traceability/timing. The physical flow is sequential, while traceability/timing monitoring can occur in parallel.
+
+- **G2 → G3, G4, G5 [AND][`G3;(G4#G5)`]**  
+  - **Justification**: Barcode identification, track-system data, and delivery request are all needed. Barcode identity is explicitly before collection; data insertion and request have no strict mutual order.
+
+- **G5 → AT1, AT2 [AND][`AT1;AT2`]**  
+  - **Justification**: The system must first receive the nurse request and then retrieve the relevant sample/destination data.
+
+- **G6 → G7, G10, G11 [AND][`G7;G10;G11`]**  
+  - **Justification**: Drawer opening/loading must occur before securing the sample, and transport follows once the drawer is locked.
+
+- **G7 → G8, G9 [OR][`G8#G9`]**  
+  - **Justification**: The drawer may be opened either by authorized personnel or by a specific robot in the specific location. Either satisfies the access condition.
+
+- **G8 → AT3, AT4 [AND][`AT3;AT4`]**  
+  - **Justification**: Personnel must be verified before the drawer is unlocked/opened.
+
+- **G9 → AT5, AT6 [AND][`AT5;AT6`]**  
+  - **Justification**: Robot/location authorization must be verified before the robot opens the drawer.
+
+- **G10 → AT7, AT8 [AND][`AT7;AT8`]**  
+  - **Justification**: The sample must be confirmed inside the drawer before the drawer is locked for transit.
+
+- **G11 → AT9, AT10 [AND][`AT9#AT10`]**  
+  - **Justification**: Transport and lock-state monitoring are both necessary and can happen concurrently.
+
+- **G12 → G13, G16 [AND][`G13;G16`]**  
+  - **Justification**: The drawer must be opened under access control before the sample can be picked/handled in the laboratory.
+
+- **G13 → G14, G15 [OR][`G14#G15`]**  
+  - **Justification**: Laboratory drawer access may be performed by authorized personnel or a specific robot.
+
+- **G14 → AT11, AT12 [AND][`AT11;AT12`]**  
+  - **Justification**: Laboratory personnel authorization must be verified before the drawer is opened.
+
+- **G15 → AT13, AT14 [AND][`AT13;AT14`]**  
+  - **Justification**: A robot must be verified as permitted in the laboratory before it opens the drawer.
+
+- **G16 → G17, G22 [OR][`G17#G22`]**  
+  - **Justification**: The description explicitly provides two alternatives: robotic arm pickup or laboratory personnel pickup.
+
+- **G17 → G18, G19, G20, G21 [AND][`G18;G19;G20;G21`]**  
+  - **Justification**: The robotic-arm workflow is explicitly ordered: pick up, scan barcode, sort, and load into the analysis entry-module.
+
+- **G18 → AT15, AT16 [AND][`AT15;AT16`]**  
+  - **Justification**: The arm must position itself before grasping/removing the sample.
+
+- **G19 → AT17, AT18 [AND][`AT17;AT18`]**  
+  - **Justification**: The barcode must be scanned and then associated with the sample record.
+
+- **G20 → AT19, AT20 [AND][`AT19;AT20`]**  
+  - **Justification**: Sorting requires determining the correct destination/category and placing the sample accordingly.
+
+- **G21 → AT21, AT22 [AND][`AT21;AT22`]**  
+  - **Justification**: The sample must be moved to the entry-module and then loaded/released into it.
+
+- **G22 → AT23, AT24 [AND][`AT23;AT24`]**  
+  - **Justification**: For personnel pickup, the robot supports/observes the pickup and then re-secures the drawer.
+
+- **G23 → G24, G25 [AND][`G24#G25`]**  
+  - **Justification**: Secure pickup logging and timing compliance are both required and can be monitored in parallel.
+
+- **G24 → AT25, AT26 [AND][`AT25;AT26`]**  
+  - **Justification**: The system must capture where/when pickup happened and then write it securely.
+
+- **G25 → G26, G27, G28 [AND][`(G26#G27);G28`]**  
+  - **Justification**: Collection and delivery times are both required for elapsed-time computation. Compliance can only be evaluated after both timestamps are available.
+
+- **G26 → AT27, AT28 [AND][`AT27;AT28`]**  
+  - **Justification**: The system retrieves the collection timestamp and links it to the barcode/sample identity.
+
+- **G27 → AT29, AT30 [AND][`AT29;AT30`]**  
+  - **Justification**: The system detects laboratory delivery and records the delivery timestamp.
+
+- **G28 → AT31, AT32 [AND][`AT31;AT32`]**  
+  - **Justification**: The elapsed time must be computed and then compared with laboratory protocol limits.
