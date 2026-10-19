@@ -1,0 +1,218 @@
+## 1. Mission Analysis and Step-by-Step Reasoning
+
+As a mission designer specialized in Multi-Robot Systems, I have analyzed the natural language mission description for the autonomous hospital vital-signs-checking mission. Here is the step-by-step reasoning and decomposition rationale:
+
+1. **Mission Scope & Periodicity**: The primary objective is recurring (every 2 hours) across all occupied hospital rooms, with a critical high-risk prioritization constraint (first 15 minutes). This requires a top-level split between **Mission Management & Scheduling (`G2`)** and **Room Execution & Patient Monitoring (`G3`)**.
+2. **Pre-Entry Validation (`G3.1`)**: Before entering any room, robots must verify two independent preconditions: patient availability and robot battery sufficiency. Both feature exception/fallback workflows (patient unavailable triggers a 5-minute retry; low battery triggers recharging and task reassignment).
+3. **Room Entry & Identification (`G3.2`)**: Once inside, the robot must approach, announce the procedure, and identify the patient in multi-bed rooms using alternative methods (asking **OR** scanning barcode).
+4. **Condition-Specific Vital Signs & Failure Handling (`G3.3`)**: Vital signs collection depends on patient medical conditions (infectious diseases, post-surgical conditions, or diabetes history). If collection fails, a fallback protocol triggers assessment questions and, in case of non-response, a nurse/doctor alert.
+5. **Sanitation & Transition (`G3.4`)**: Post-check procedures mandate actuator disinfection after patient contact and robot sterilization when exiting infectious disease rooms, followed by marking the task complete and proceeding to the next room.
+6. **Fleet-Level Escalation (`G2.2`)**: If the mission cannot be completed in time, additional robots are assigned; if no combination of robots can finish the mission, the site manager must be alerted.
+
+---
+
+## 2. Goal Model Definitions
+
+### Goals
+
+| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
+| --- | --- | --- | --- | --- | --- | --- |
+| **G1**: Execute Hospital Vital Signs Monitoring Mission | Orchestrate periodic multi-robot rounds to check patient vital signs across all occupied hospital rooms. | `G2; G3` | Achieve | Target Condition: All occupied hospital rooms are visited and patients' vital signs are checked according to medical conditions within the required time window. | AND | The mission requires both overarching scheduling/fleet management (`G2`) and detailed room execution/patient monitoring (`G3`) to be successfully fulfilled together. |
+| **G2**: Manage Mission Scheduling and Fleet Allocation | Coordinate the 2-hour periodic cycle, high-risk patient prioritization, and multi-robot resource allocation. | `G2.1#G2.2` | Achieve | Target Condition: Mission cycles are scheduled every 2 hours with high-risk patients checked in the first 15 minutes, and robot resources are dynamically allocated or escalated. | AND | Managing temporal constraints (periodic schedule and high-risk timing) and resource constraints (fleet sizing and manager alerts) are complementary and required for robust multi-robot mission execution. |
+| **G2.1**: Schedule Periodic and High-Risk Mission Rounds | Ensure the mission is triggered every 2 hours and high-risk patients are checked within the first 15 minutes. | `-` | Achieve | Target Condition: Every occupied room is scheduled for a visit every 2 hours, and high-risk patients are prioritized within the first 15 minutes. | AND | Enforces the temporal requirements stated in the description ("Every two hours... All the patients in high risk must be checked in the first 15 minutes"). |
+| **G2.2**: Handle Robot Fleet Capacity and Escalation | Assign additional robots if needed or alert the site manager if no robot combination can complete the mission. | `FALLBACK(G2.2.1, G2.2.2)` | Achieve | Target Condition: Mission resource capacity is adapted through robot reassignment or manager notification. | AND | If initial robot assignment is insufficient, additional robots are deployed; if impossible, the manager is alerted as a fallback safety protocol. |
+| **G2.2.1**: Assign Additional Robots for Time Compliance | Assign extra robots to help complete the mission within the required time. | `-` | Perform | - | AND | Directly addresses the description: "Additional robots can be assigned to help in case of impossibility of performing the mission in the required time." |
+| **G2.2.2**: Alert Site Manager on Mission Impossibility | Notify the responsible manager if no robot combination can complete the mission. | `-` | Perform | - | AND | Direct instruction from description: "The responsible manager for the site must be alerted if no combination of robots can complete the mission." |
+| **G3**: Execute Room Visit and Patient Vital Signs Monitoring | Perform pre-entry checks, room entry, patient identification, vital signs collection, and post-check procedures for each room. | `G3.1; G3.2; G3.3; G3.4` | Achieve | Target Condition: An assigned room is successfully inspected, patient is checked, and post-inspection protocols are completed. | AND | Room execution follows a strict operational pipeline: pre-entry checks must precede entry and identification, which precede vital sign collection, which precede post-check sanitation and room transition. |
+| **G3.1**: Perform Pre-Entry Room and Robot Validation | Verify patient availability and robot battery sufficiency before entering the room. | `G3.1.1#G3.1.2` | Achieve | Target Condition: Patient availability and robot battery sufficiency are verified prior to room entry. | AND | Both pre-conditions (patient available, sufficient battery) must be validated before the robot commits to entering the hospital room. |
+| **G3.1.1**: Verify Patient Availability | Check if the patient is available for vital signs checking, with fallback to return in 5 minutes if unavailable. | `FALLBACK(G3.1.1.1, G3.1.1.2)` | Achieve | Target Condition: Patient availability is confirmed or a 5-minute retry delay is triggered. | AND | The mission states: "Before entering the room, the robot must check if the patient is available... If the patient is not available, the robot should come back in 5 minutes." |
+| **G3.1.1.1**: Check Patient Availability Status | Query whether the patient is present and ready. | `-` | Query | QueriedProperty: patient_available (boolean) | AND | Retrieval of status information before proceeding. |
+| **G3.1.1.2**: Delay and Return in Five Minutes | Wait 5 minutes before retrying room visit if patient is unavailable. | `-` | Perform | - | AND | Alternative action triggered when patient is not available ("the robot should come back in 5 minutes"). |
+| **G3.1.2**: Verify Robot Battery Sufficiency | Check if battery is sufficient for all room tasks, with fallback to recharge and task reassignment. | `FALLBACK(G3.1.2.1, G3.1.2.2)` | Achieve | Target Condition: Battery level is verified sufficient or recharging and task reassignment are initiated. | AND | The mission specifies: "check if there is enough battery... If there is not enough battery, the robot should recharge and the tasks need to be reassigned." |
+| **G3.1.2.1**: Check Battery Level Status | Query current battery charge against required energy for room tasks. | `-` | Query | QueriedProperty: battery_sufficient (boolean) | AND | Information retrieval to evaluate battery state. |
+| **G3.1.2.2**: Recharge Robot and Reassign Tasks | Return to charging station and reassign tasks if battery is insufficient. | `-` | Perform | - | AND | Fallback procedure when battery check fails ("the robot should recharge and the tasks need to be reassigned"). |
+| **G3.2**: Enter Room and Identify Patient | Enter the hospital room, approach the patient, announce the procedure, provide instructions, and identify the correct patient. | `G3.2.1; G3.2.2` | Achieve | Target Condition: Robot has entered the room, communicated with the patient, and correctly identified the patient in a multi-bed room. | AND | Entering and communicating sets up the patient interaction context before specific patient identity matching is finalized. |
+| **G3.2.1**: Approach Patient and Provide Instructions | Approach the patient, announce procedure, and give instructions. | `-` | Perform | - | AND | Direct mission mandate: "Once inside the room, the robot should approach the patient, announce the procedure to be performed, and provide instructions to the patient." |
+| **G3.2.2**: Identify Correct Patient | Identify the correct patient using available identification methods. | `-` | Achieve | Target Condition: Correct patient identity is confirmed in rooms with one or more beds. | OR | The mission states: "Hospital rooms may have one or more beds. So the robot has to identify the correct patient either by asking or by scanning the patients barcode." |
+| **G3.3**: Collect Condition-Specific Vital Signs and Handle Failures | Collect required vital signs based on patient medical conditions and handle any collection failures through assessment and alerts. | `FALLBACK(G3.3.1, G3.3.2)` | Achieve | Target Condition: Vital signs are successfully collected or failure handling protocols (assessment questions and nurse alert) are executed. | AND | Normal vital sign collection is attempted first; if failure occurs, the exception handling protocol (assessment & nurse alert) is executed as a fallback. |
+| **G3.3.1**: Collect Required Vital Signs by Condition | Measure vital signs according to patient medical conditions (infectious disease, post-surgical, diabetes). | `G3.3.1.1#G3.3.1.2#G3.3.1.3` | Perform | - | OR | Patients are subject to specific conditions (infectious diseases OR post-surgical conditions OR history of diabetes), each requiring specific vital sign checks. |
+| **G3.3.1.1**: Check Vital Signs for Infectious Disease Patients | Measure heart rate, blood pressure, body temperature, and blood oxygenation. | `-` | Perform | - | AND | Direct instruction: "Patients subject to infectious diseases must be checked for heart rate, blood pressure, body temperature, and blood oxygenation." |
+| **G3.3.1.2**: Check Vital Signs for Post-Surgical Patients | Measure heart rate and blood oxygenation. | `-` | Perform | - | AND | Direct instruction: "Patients subject to post-surgical conditions must be checked for heart rate and blood oxygenation." |
+| **G3.3.1.3**: Check Glucose for Diabetes Patients | Measure glucose levels in the blood. | `-` | Perform | - | AND | Direct instruction: "Patients with a history of diabetes must be checked for glucose levels in the blood." |
+| **G3.3.2**: Handle Vital Signs Collection Failure | Assess patient status via questions upon vital signs collection failure and alert medical staff if non-responsive. | `G3.3.2.1; G3.3.2.2` | Achieve | Target Condition: Patient status is assessed through backup questions and medical staff are alerted if necessary. | AND | Mission rule: "The failure of collecting any necessary vital signs should trigger a set of questions to assess the patient status... In case of non-response, an alert should be sent to the responsible nurse/doctor." |
+| **G3.3.2.1**: Assess Patient Status via Questions | Ask assessment questions for vital signs that failed to be collected. | `-` | Perform | - | AND | Direct instruction: "trigger a set of questions to assess the patient status for those signs that were failed to be collected." |
+| **G3.3.2.2**: Alert Medical Staff on Non-Response | Send an alert to the responsible nurse or doctor in case of non-response. | `-` | Perform | - | AND | Direct instruction: "In case of non-response, an alert should be sent to the responsible nurse/doctor." |
+| **G3.4**: Perform Post-Check Procedures and Room Transition | Disinfect actuators, sterilize robot if leaving an infectious room, mark check as done, and proceed to next room. | `(G3.4.1#G3.4.2); G3.4.3` | Achieve | Target Condition: Robot actuators and frame are sanitized, room check is logged as complete, and robot navigates to the next room. | AND | Post-check sanitation (actuator disinfection and infectious room sterilization) and mission state updating/navigation are necessary concluding steps before leaving the room. |
+| **G3.4.1**: Disinfect Actuators After Patient Contact | Disinfect robot actuators after touching the patient. | `-` | Perform | - | AND | Direct instruction: "If the robot is performing any duties with patient contact (touching the patient) it should disinfect its actuators afterwards." |
+| **G3.4.2**: Sterilize Robot After Infectious Room Visit | Sterilize the robot when exiting a room where an infectious disease patient is treated. | `-` | Perform | - | AND | Direct instruction: "When a robot comes out of a room where a patient subject to infectious disease is being treated, it must be sterilized." |
+| **G3.4.3**: Mark Patient Check Complete and Proceed | Mark patient check as done and proceed to the next room. | `-` | Achieve | Target Condition: Patient record is updated to done and robot navigates to the next occupied room. | AND | Direct instruction: "Once the patient is checked, the robot should mark it as done and proceed to the next room." |
+
+---
+
+### Tasks
+
+| Name | Text | Relation | Location | Number of Robots | Justification |
+| --- | --- | --- | --- | --- | --- |
+| **AT1**: Approach Patient and Give Instructions | Robot approaches the patient's bedside, announces procedure, and gives verbal/visual instructions. | AND | hospital room | 1 | Executed inside the patient's hospital room by the assigned robot interacting directly with the patient. |
+| **AT2**: Ask Patient for Identification | Verbally ask the patient for their name and identification details. | OR | hospital room | 1 | Alternative identification method performed at the patient's bed in the hospital room. |
+| **AT3**: Scan Patient Barcode | Use onboard scanner to read the patient's identification barcode. | OR | hospital room | 1 | Alternative barcode scanning method performed at the patient's bed in the hospital room. |
+| **AT4**: Measure Vital Signs for Infectious Disease | Measure heart rate, blood pressure, body temperature, and blood oxygenation. | AND | hospital room | 1 | Performed for patients subject to infectious diseases in their hospital room. |
+| **AT5**: Measure Vital Signs for Post-Surgical Condition | Measure heart rate and blood oxygenation. | AND | hospital room | 1 | Performed for patients subject to post-surgical conditions in their hospital room. |
+| **AT6**: Measure Blood Glucose for Diabetes | Measure glucose levels in the blood. | AND | hospital room | 1 | Performed for patients with a history of diabetes in their hospital room. |
+| **AT7**: Conduct Patient Assessment Questionnaire | Ask assessment questions to evaluate patient status for failed vital signs. | AND | hospital room | 1 | Executed in the patient's hospital room when vital signs collection fails. |
+| **AT8**: Transmit Non-Response Alert to Medical Staff | Send urgent alert notification to the responsible nurse or doctor via hospital communication network. | AND | hospital room / nurse station | 1 | Communicates patient non-response from the hospital room to the nurse/doctor station. |
+| **AT9**: Disinfect Robot Actuators | Perform UV or chemical disinfection on robot contact actuators. | AND | hospital room / corridor | 1 | Executed immediately after patient contact duties either inside or just outside the hospital room. |
+| **AT10**: Sterilize Robot Frame | Execute full robot sterilization cycle following exit from an infectious patient room. | AND | hospital corridor / decontamination station | 1 | Required when coming out of an infectious disease room. |
+| **AT11**: Recharge Robot Battery | Dock robot at charging station to replenish battery. | AND | hospital charging station | 1 | Executed at hospital charging facilities when battery is insufficient. |
+| **AT12**: Reassign Tasks | Reallocate pending room checks among available robot fleet. | AND | hospital control server | `[1, n]` | Performed across the multi-robot fleet management system when a robot requires recharging. |
+| **AT13**: Assign Additional Robots | Deploy additional robots from standby fleet to assist in meeting mission time requirements. | AND | hospital facility | `[1, n]` | Executed by the fleet coordination system when mission time requirements cannot be met by current robots. |
+| **AT14**: Alert Site Manager | Transmit escalation alert to the responsible manager regarding mission completion failure. | AND | hospital management office | 1 | Executed when no combination of robots can complete the mission. |
+
+---
+
+## 3. Summary Table
+
+| Element ID | Type | Title | Description |
+| --- | --- | --- | --- |
+| **G1** | Goal | Execute Hospital Vital Signs Monitoring Mission | Orchestrate periodic multi-robot rounds to check patient vital signs across all occupied hospital rooms. |
+| **G2** | Goal | Manage Mission Scheduling and Fleet Allocation | Coordinate the 2-hour periodic cycle, high-risk patient prioritization, and multi-robot resource allocation. |
+| **G2.1** | Goal | Schedule Periodic and High-Risk Mission Rounds | Ensure the mission is triggered every 2 hours and high-risk patients are checked within the first 15 minutes. |
+| **G2.2** | Goal | Handle Robot Fleet Capacity and Escalation | Assign additional robots if needed or alert the site manager if no robot combination can complete the mission. |
+| **G2.2.1** | Goal | Assign Additional Robots for Time Compliance | Assign extra robots to help complete the mission within the required time. |
+| **G2.2.2** | Goal | Alert Site Manager on Mission Impossibility | Notify the responsible manager if no robot combination can complete the mission. |
+| **G3** | Goal | Execute Room Visit and Patient Vital Signs Monitoring | Perform pre-entry checks, room entry, patient identification, vital signs collection, and post-check procedures for each room. |
+| **G3.1** | Goal | Perform Pre-Entry Room and Robot Validation | Verify patient availability and robot battery sufficiency before entering the room. |
+| **G3.1.1** | Goal | Verify Patient Availability | Check if the patient is available for vital signs checking, with fallback to return in 5 minutes if unavailable. |
+| **G3.1.1.1** | Goal | Check Patient Availability Status | Query whether the patient is present and ready. |
+| **G3.1.1.2** | Goal | Delay and Return in Five Minutes | Wait 5 minutes before retrying room visit if patient is unavailable. |
+| **G3.1.2** | Goal | Verify Robot Battery Sufficiency | Check if battery is sufficient for all room tasks, with fallback to recharge and task reassignment. |
+| **G3.1.2.1** | Goal | Check Battery Level Status | Query current battery charge against required energy for room tasks. |
+| **G3.1.2.2** | Goal | Recharge Robot and Reassign Tasks | Return to charging station and reassign tasks if battery is insufficient. |
+| **G3.2** | Goal | Enter Room and Identify Patient | Enter the hospital room, approach the patient, announce the procedure, provide instructions, and identify the correct patient. |
+| **G3.2.1** | Goal | Approach Patient and Provide Instructions | Approach the patient, announce procedure, and give instructions. |
+| **G3.2.2** | Goal | Identify Correct Patient | Identify the correct patient using available identification methods. |
+| **G3.3** | Goal | Collect Condition-Specific Vital Signs and Handle Failures | Collect required vital signs based on patient medical conditions and handle any collection failures through assessment and alerts. |
+| **G3.3.1** | Goal | Collect Required Vital Signs by Condition | Measure vital signs according to patient medical conditions (infectious disease, post-surgical, diabetes). |
+| **G3.3.1.1** | Goal | Check Vital Signs for Infectious Disease Patients | Measure heart rate, blood pressure, body temperature, and blood oxygenation. |
+| **G3.3.1.2** | Goal | Check Vital Signs for Post-Surgical Patients | Measure heart rate and blood oxygenation. |
+| **G3.3.1.3** | Goal | Check Glucose for Diabetes Patients | Measure glucose levels in the blood. |
+| **G3.3.2** | Goal | Handle Vital Signs Collection Failure | Assess patient status via questions upon vital signs collection failure and alert medical staff if non-responsive. |
+| **G3.3.2.1** | Goal | Assess Patient Status via Questions | Ask assessment questions for vital signs that failed to be collected. |
+| **G3.3.2.2** | Goal | Alert Medical Staff on Non-Response | Send an alert to the responsible nurse or doctor in case of non-response. |
+| **G3.4** | Goal | Perform Post-Check Procedures and Room Transition | Disinfect actuators, sterilize robot if leaving an infectious room, mark check as done, and proceed to next room. |
+| **G3.4.1** | Goal | Disinfect Actuators After Patient Contact | Disinfect robot actuators after touching the patient. |
+| **G3.4.2** | Goal | Sterilize Robot After Infectious Room Visit | Sterilize the robot when exiting a room where an infectious disease patient is treated. |
+| **G3.4.3** | Goal | Mark Patient Check Complete and Proceed | Mark patient check as done and proceed to the next room. |
+| **AT1** | Task | Approach Patient and Give Instructions | Robot approaches the patient's bedside, announces procedure, and gives verbal/visual instructions. |
+| **AT2** | Task | Ask Patient for Identification | Verbally ask the patient for their name and identification details. |
+| **AT3** | Task | Scan Patient Barcode | Use onboard scanner to read the patient's identification barcode. |
+| **AT4** | Task | Measure Vital Signs for Infectious Disease | Measure heart rate, blood pressure, body temperature, and blood oxygenation. |
+| **AT5** | Task | Measure Vital Signs for Post-Surgical Condition | Measure heart rate and blood oxygenation. |
+| **AT6** | Task | Measure Blood Glucose for Diabetes | Measure glucose levels in the blood. |
+| **AT7** | Task | Conduct Patient Assessment Questionnaire | Ask assessment questions to evaluate patient status for failed vital signs. |
+| **AT8** | Task | Transmit Non-Response Alert to Medical Staff | Send urgent alert notification to the responsible nurse or doctor via hospital communication network. |
+| **AT9** | Task | Disinfect Robot Actuators | Perform UV or chemical disinfection on robot contact actuators. |
+| **AT10** | Task | Sterilize Robot Frame | Execute full robot sterilization cycle following exit from an infectious patient room. |
+| **AT11** | Task | Recharge Robot Battery | Dock robot at charging station to replenish battery. |
+| **AT12** | Task | Reassign Tasks | Reallocate pending room checks among available robot fleet. |
+| **AT13** | Task | Assign Additional Robots | Deploy additional robots from standby fleet to assist in meeting mission time requirements. |
+| **AT14** | Task | Alert Site Manager | Transmit escalation alert to the responsible manager regarding mission completion failure. |
+
+---
+
+## 4. Logical Relationships
+
+* **G1 -> G2, G3 [AND][(G2; G3)]**
+* **Justification**: The mission requires both overarching scheduling/fleet management (`G2`) and detailed room execution/patient monitoring (`G3`) executed in a structured sequence to fulfill the global mission.
+
+
+* **G2 -> G2.1, G2.2 [AND][(G2.1#G2.2)]**
+* **Justification**: Periodic scheduling (`G2.1`) and fleet resource/escalation management (`G2.2`) operate concurrently as complementary aspects of mission control.
+
+
+* **G2.2 -> G2.2.1, G2.2.2 [AND][FALLBACK(G2.2.1, G2.2.2)]**
+* **Justification**: First, additional robots are assigned if time constraints cannot be met; as a fallback, if no robot combination can complete the mission, the site manager is alerted.
+
+
+* **G3 -> G3.1, G3.2, G3.3, G3.4 [AND][(G3.1; G3.2; G3.3; G3.4)]**
+* **Justification**: Room execution follows a strict operational pipeline: pre-entry checks precede room entry and identification, which precede vital sign collection, concluding with post-check sanitation and room transition.
+
+
+* **G3.1 -> G3.1.1, G3.1.2 [AND][(G3.1.1#G3.1.2)]**
+* **Justification**: Checking patient availability and verifying robot battery are independent pre-entry checks that can be performed in parallel before room entry.
+
+
+* **G3.1.1 -> G3.1.1.1, G3.1.1.2 [AND][FALLBACK(G3.1.1.1, G3.1.1.2)]**
+* **Justification**: The robot queries patient availability first; if the patient is unavailable, the fallback action to delay and return in 5 minutes is executed.
+
+
+* **G3.1.2 -> G3.1.2.1, G3.1.2.2 [AND][FALLBACK(G3.1.2.1, G3.1.2.2)]**
+* **Justification**: The robot queries battery sufficiency first; if insufficient, the fallback action to recharge and reassign tasks is executed.
+
+
+* **G3.2 -> G3.2.1, G3.2.2 [AND][(G3.2.1; G3.2.2)]**
+* **Justification**: The robot must first enter, approach the patient, and provide instructions before patient identity verification is completed.
+
+
+* **G3.3 -> G3.3.1, G3.3.2 [AND][FALLBACK(G3.3.1, G3.3.2)]**
+* **Justification**: Condition-specific vital sign collection is attempted first; if collection fails for any vital sign, the fallback failure handling protocol (assessment questions and nurse alert) is triggered.
+
+
+* **G3.3.1 -> G3.3.1.1, G3.3.1.2, G3.3.1.3 [OR][(G3.3.1.1#G3.3.1.2#G3.3.1.3)]**
+* **Justification**: Patients belong to specific condition categories (infectious disease OR post-surgical OR diabetes), requiring alternative sets of vital sign checks.
+
+
+* **G3.3.2 -> G3.3.2.1, G3.3.2.2 [AND][(G3.3.2.1; G3.3.2.2)]**
+* **Justification**: Upon vital sign collection failure, assessment questions are asked first; if the patient is non-responsive, an alert is subsequently sent to medical staff.
+
+
+* **G3.4 -> G3.4.1, G3.4.2, G3.4.3 [AND][((G3.4.1#G3.4.2); G3.4.3)]**
+* **Justification**: Actuator disinfection and infectious room sterilization can occur concurrently as post-contact sanitation before marking the patient check complete and proceeding to the next room.
+
+
+* **G3.2.1 -> AT1 [AND]**
+* **Justification**: Goal `G3.2.1` is directly realized by performing task `AT1` (approaching the patient and giving instructions).
+
+
+* **G3.2.2 -> AT2, AT3 [OR]**
+* **Justification**: Identifying the correct patient is achieved either by asking verbally (`AT2`) OR by scanning the patient's barcode (`AT3`).
+
+
+* **G3.3.1.1 -> AT4 [AND]**
+* **Justification**: Checking vital signs for infectious disease patients is executed via task `AT4`.
+
+
+* **G3.3.1.2 -> AT5 [AND]**
+* **Justification**: Checking vital signs for post-surgical patients is executed via task `AT5`.
+
+
+* **G3.3.1.3 -> AT6 [AND]**
+* **Justification**: Checking blood glucose for diabetes patients is executed via task `AT6`.
+
+
+* **G3.3.2.1 -> AT7 [AND]**
+* **Justification**: Assessing patient status via backup questions is executed via task `AT7`.
+
+
+* **G3.3.2.2 -> AT8 [AND]**
+* **Justification**: Alerting medical staff on non-response is executed via task `AT8`.
+
+
+* **G3.4.1 -> AT9 [AND]**
+* **Justification**: Disinfecting actuators after patient contact is executed via task `AT9`.
+
+
+* **G3.4.2 -> AT10 [AND]**
+* **Justification**: Sterilizing the robot after visiting an infectious disease room is executed via task `AT10`.
+
+
+* **G3.1.2.2 -> AT11, AT12 [AND]**
+* **Justification**: Recharging and task reassignment encompass docking at the charger (`AT11`) and reallocating tasks across the fleet (`AT12`).
+
+
+* **G2.2.1 -> AT13 [AND]**
+* **Justification**: Assigning additional robots is executed via task `AT13`.
+
+
+* **G2.2.2 -> AT14 [AND]**
+* **Justification**: Alerting the site manager when mission completion is impossible is executed via task `AT14`.

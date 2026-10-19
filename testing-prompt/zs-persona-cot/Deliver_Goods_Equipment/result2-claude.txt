@@ -1,0 +1,143 @@
+# Mission Decomposition — Robotic Collect & Deliver Task
+
+Below is my full reasoning process followed by the formal goal model (goal tables, task tables, summary, and logical relationships).
+
+---
+
+## Step-by-Step Reasoning
+
+**1. Finding the root intention.**
+The description opens with a single overarching intentional statement: *"a robot must collect the required resources in the storage and deliver them to the requesting agent in a specified location."* This is the mission's top-level, non-operational objective → **G1**. It has a clear end-state (resources at the requested location for the requesting agent), so it's an **Achieve** goal, not Perform (it's not "try an action regardless of outcome") and not Query (nothing is being retrieved as information).
+
+**2. Finding the phase structure (sequential).**
+The text explicitly separates a *"collection phase"* and a *"delivery phase"*, and states *"Once retrieved, the delivery phase begins."* This is an explicit statement of **order**, but it is *not* triggered by a failure/condition/threshold — it's the normal flow of the mission. Per the rules, FALLBACK only applies to condition-triggered alternatives; a plain stated order of normal steps is **sequential (`;`)**. So G1 decomposes AND into Collection Phase and Delivery Phase, executed `G2;G7`.
+
+**3. Finding the fallback (exception) structures.**
+Two explicit "if-threshold" clauses appear, each describing a normal path and a condition-triggered alternative — the textbook definition of FALLBACK:
+- *"If the battery... runs low (10%) in the collection phase, the robot goes back to the recharging station and assigns the mission to another robot."* → FALLBACK between "normal collection" and "low-battery collection recovery."
+- *"If the battery... runs low (30%) in the delivery phase, the robot must return the resource to a checkpoint and assign the remaining task to another robot."* → FALLBACK between "normal delivery" and "low-battery delivery recovery."
+- Nested inside the second one: *"In case of failure to return the resource to a checkpoint, an alert must be triggered..."* → a **second, nested FALLBACK** inside the low-battery-delivery recovery goal itself (`FALLBACK(FALLBACK(...), ...)` pattern).
+
+Per the rule, every FALLBACK forces an **AND** decomposition between its two branches (both branches must exist in the model even though only one executes at runtime).
+
+**4. Distinguishing Achieve vs. Perform vs. Query goals.**
+- Ordering storages by *"estimation of waiting time summed up with path to be run"* is pure information-gathering about the world (no action, no target world-state) → **Query**.
+- Knowing how many runs remain before the robot can stop making trips is also information-gathering → **Query**.
+- Visiting a storage, retrieving a resource, and delivering resources all have an explicit completion condition ("until retrieved," "reach... location") → **Achieve**.
+- The two battery-recovery procedures are *reactive action sequences* with no explicit success/failure verification of their own (except the delivery one, which has an explicit failure clause) — I used this distinction: the **collection recovery** (G6) is modeled as **Perform** (just execute the two actions, no stated condition to verify), while the **delivery recovery** (G9) is modeled as **Achieve**, because the text explicitly introduces a success/failure condition on the checkpoint-return step. The pure notification response to failure (trigger alert + report) is again just "do these actions" → **Perform** (G10).
+
+**5. Finding tasks, locations, and robot counts.**
+Only four locations are explicitly cited in the text: **storage**, **recharging station**, **checkpoint**, and the **specified (delivery) location**. I did not invent any location beyond these. Every concrete, assignable, single-step robot action (navigate, send message, wait, return, reassign, transport, trigger alert, send report) became a **Task (AT#)**, since Tasks must be fully operational/atomic, unlike Goals.
+
+**6. Handling "multiple robots in parallel."**
+*"When multiple items are required from different storages, multiple robots can be assigned to parallel collect-deliver tasks..."* This describes **multiple concurrent instances of the same collect/deliver subtree** (one per item/storage), not two *different* sibling sub-goals running in parallel. Since the parallel operator `#` explicitly cannot relate a goal to itself (`exp1` cannot equal `exp2`), I did not model this as a goal-level parallel annotation. Instead, I captured it where the model's own attribute structure supports it: the **Number of Robots** range `[1, n]` on the tasks that actually scale with the number of required items/storages — `AT1 (Navigate to Storage)` and `AT6 (Transport Resource to Destination)` — with `n` = number of distinct storages/items the mission currently requires. This is the only place the mission text ties multiplicity of robots to a concrete action.
+
+**7. Handling the two examples (sterile medical equipment, clean linens).**
+These are given only as illustrations of what "required resources" can be (*"Examples of goods/equipment are..."*), not as separate missions with their own actions, locations, or robot behavior beyond what's already generically described. Modeling them as additional goals would duplicate the already-captured intention "collect & deliver resource" — violating the redundancy-avoidance rule. I therefore treat `storage`/`DeliveryLocation` as the generic variables that these examples instantiate (e.g., sterile facility ≡ storage, use destination ≡ DeliveryLocation) rather than adding new nodes.
+
+**8. On OR decomposition.**
+I found **no OR decomposition** anywhere in this description. Every decomposition is either a plain AND (jointly required steps) or an AND forced by a FALLBACK (mutually exclusive-at-runtime, but structurally both required in the model). There is no point in the text where the fulfillment of *one* child alone, chosen freely among true alternatives, would satisfy a parent goal — the only "alternative" behaviors present are condition-triggered (fallback), not optional choices.
+
+**9. Zero-robot content excluded.**
+"Requesting agent" and "sector manager" are recipients/stakeholders, not robots, so no goal was created purely for their existence — they only appear as destinations/targets inside robot tasks.
+
+---
+
+## Goal Table
+
+| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation (to parent) | Justification |
+|---|---|---|---|---|---|---|
+| **G1: Fulfill Resource Request** | The robot(s) collect required resources from storage and deliver them to the requesting agent at the specified location. | `G2;G7` | Achieve | **Target condition:** The resources required by the requesting agent have been delivered to the specified location. | N/A (root) | Explicit end-state described in the mission's opening sentence; success is defined by reaching a world-state, not merely attempting an action — classic Achieve goal. |
+| **G2: Collection Phase** | The robot gathers all required resources from the relevant storage(s), handling low-battery interruption. | `FALLBACK((G3;G5), G6)` | Achieve | **Target condition:** The required resources have been retrieved from the storage location(s). | AND | Collection has a clear completion state ("resources retrieved"); the description also introduces an explicit battery-threshold exception (10%), requiring FALLBACK since an order ("normal, then alternative-on-condition") is explicitly given. |
+| **G3: Visit Storage Locations** | The robot travels to the storage(s) holding the required resources, in priority order. | `G4;AT1` | Achieve | **Target condition:** The robot is present at the storage location(s) holding the required resource(s), visited in the order defined by waiting-time + path-time. | AND | Text states a required state to reach ("go to the storage places") preceded by an explicit prioritization rule — the ordering must be known before travel, hence sequential. |
+| **G4: Determine Visiting Order** | Compute the order of storages to visit based on estimated waiting time plus path time. | `-` (leaf) | Query | **QueriedProperty:** Estimated waiting time at each candidate storage summed with the estimated travel/path time to reach it. | AND | "The order... is defined by the estimation of waiting time summed up with the path to be run" is pure information-gathering/computation about the environment — no physical action, no target world-state → Query. |
+| **G5: Request and Retrieve Resource** | The robot requests the specified resource from the storage and waits until it is retrieved. | `AT2;AT3` | Achieve | **Target condition:** The requested resource has been retrieved from the storage. | AND | Explicit completion condition ("waits until the resources have been retrieved"); robot acts and plans to reach that state. |
+| **G6: Handle Low Battery – Collection** | On reaching the 10% battery threshold during collection, the robot returns to recharge and hands off the mission. | `AT4;AT5` | Perform | N/A (Perform) | AND | Text only describes executing two actions in reaction to a threshold, with no explicit success/failure condition attached to this reaction (unlike the delivery-phase equivalent) — fits "execute actions when possible" (Perform). |
+| **G7: Delivery Phase** | The robot transports all retrieved resources to the specified location, handling low-battery interruption. | `FALLBACK((G8;AT6), G9)` | Achieve | **Target condition:** All retrieved resources have been transported to and are present at the specified delivery location. | AND | Clear completion state (resources delivered); explicit 30% battery exception again requires FALLBACK, since the text gives normal behavior + explicit condition-triggered alternative. |
+| **G8: Determine Remaining Delivery Runs** | Determine how many resources still need to be transported, to know whether another run is required. | `-` (leaf) | Query | **QueriedProperty:** The quantity/set of resources still pending delivery (used to decide whether more runs are needed). | AND | "The robot will make as many runs as necessary" implies the robot must know how much remains before each run — information retrieval about current load/state, not an action → Query. |
+| **G9: Handle Low Battery – Delivery** | On reaching the 30% threshold during delivery, resolve the situation by returning the resource and reassigning, or alerting on failure. | `FALLBACK((AT7;AT8), G10)` | Achieve | **Target condition:** The low-battery delivery situation is resolved — the resource is safely placed at a checkpoint with delivery reassigned, OR (on failure) the sector manager has been alerted. | AND | Unlike G6, this goal has an explicit success/failure check in the text ("in case of failure to return..."), i.e., a verifiable target condition — hence Achieve, with a nested FALLBACK for the failure branch. |
+| **G10: Report Checkpoint Return Failure** | If the resource cannot be returned to the checkpoint, trigger an alert and report to the sector manager. | `AT9#AT10` | Perform | N/A (Perform) | AND | Purely a notification procedure ("an alert must be triggered and the report sent") — success is just performing the actions, no further state to verify → Perform. No explicit order between the two actions is given, so they are modeled as possibly-parallel. |
+
+---
+
+## Task Table
+
+| Name | Text | Relation | Location | Number of Robots | Justification |
+|---|---|---|---|---|---|
+| **AT1: Navigate to Storage Location** | Robot travels to a storage location in the computed priority order. | AND | storage | `[1, n]` (n = number of distinct storages/items currently required) | "Storage" is explicitly cited; robot count scales because "multiple robots can be assigned to parallel collect-deliver tasks" when different storages are needed simultaneously. |
+| **AT2: Send Resource Request Message** | Robot sends a message to the storage specifying the exact resources requested. | AND | storage | `1` | "The robot sends a message" — a single, specific robot performs this per visited storage. |
+| **AT3: Wait for Resource Retrieval** | Robot waits until the requested resources have been retrieved. | AND | storage | `1` | Same robot that sent the request waits, per the text ("...and waits until the resources have been retrieved"). |
+| **AT4: Return to Recharging Station** | Robot travels back to the recharging station. | AND | recharging station | `1` | Explicit action and explicit location ("goes back to the recharging station"); performed by the single low-battery robot. |
+| **AT5: Reassign Mission to Another Robot** | The collection mission is handed off to a different robot. | AND | storage | `1` | "Assigns the mission to another robot" — exactly one replacement robot; it must continue at the storage where the task was interrupted. |
+| **AT6: Transport Resource to Destination** | Robot carries resources (over as many runs as needed) to the specified delivery location. | AND | DeliveryLocation (the requesting agent's specified location) | `[1, m]` (m = number of concurrent delivery runs/robots for different items) | Explicitly cited variable location ("deliver them... in a specified location"); robot count scales for the same parallel-tasking reason as AT1. |
+| **AT7: Return Resource to Checkpoint** | Robot carries the resource back to a checkpoint. | AND | checkpoint | `1` | Explicit action and explicit location ("return the resource to a checkpoint"); single robot. |
+| **AT8: Reassign Remaining Delivery Task** | The remaining delivery task is handed off to another robot that knows the resource's position. | AND | checkpoint | `1` | "Assign the remaining task to another robot, which will know where the resource is positioned" — exactly one replacement robot, continuing from the checkpoint. |
+| **AT9: Trigger Alert** | An alert is raised upon failure to return the resource to the checkpoint. | AND | checkpoint | `1` | Triggered at the point of failure, which occurs during the attempted checkpoint return — the only location contextually available in the text at that moment. |
+| **AT10: Send Report to Sector Manager** | A report of the failure is sent to the sector manager. | AND | checkpoint | `1` | Same contextual reasoning as AT9; occurs alongside the alert, at the point of failure. |
+
+---
+
+## Summary Table
+
+| ID | Name | Type |
+|---|---|---|
+| G1 | Fulfill Resource Request | Goal (Achieve) |
+| G2 | Collection Phase | Goal (Achieve) |
+| G3 | Visit Storage Locations | Goal (Achieve) |
+| G4 | Determine Visiting Order | Goal (Query) |
+| G5 | Request and Retrieve Resource | Goal (Achieve) |
+| G6 | Handle Low Battery – Collection | Goal (Perform) |
+| G7 | Delivery Phase | Goal (Achieve) |
+| G8 | Determine Remaining Delivery Runs | Goal (Query) |
+| G9 | Handle Low Battery – Delivery | Goal (Achieve) |
+| G10 | Report Checkpoint Return Failure | Goal (Perform) |
+| AT1 | Navigate to Storage Location | Task |
+| AT2 | Send Resource Request Message | Task |
+| AT3 | Wait for Resource Retrieval | Task |
+| AT4 | Return to Recharging Station | Task |
+| AT5 | Reassign Mission to Another Robot | Task |
+| AT6 | Transport Resource to Destination | Task |
+| AT7 | Return Resource to Checkpoint | Task |
+| AT8 | Reassign Remaining Delivery Task | Task |
+| AT9 | Trigger Alert | Task |
+| AT10 | Send Report to Sector Manager | Task |
+
+---
+
+## Logical Relationships
+
+- **G1 -> G2, G7 [AND] (sequential: G2;G7)**
+  - **Justification:** Collection and delivery are both mandatory for the mission to succeed, and the text explicitly states delivery begins only once collection finishes ("Once retrieved, the delivery phase begins") — a stated normal order, not a condition-triggered alternative, so sequential rather than FALLBACK.
+
+- **G2 -> G3, G5, G6 [AND] FALLBACK((G3;G5), G6)**
+  - **Justification:** G3 (visit storage) must precede G5 (request/retrieve) in normal operation. The whole normal path (G3;G5) is challenged by an explicit battery-threshold condition (10%), whose alternative is G6 — a textbook FALLBACK, which mandates AND between the branches.
+
+- **G3 -> G4, AT1 [AND] (sequential: G4;AT1)**
+  - **Justification:** The visiting order must be computed before the robot can navigate; both the computation and the travel are required, in that stated order.
+
+- **G5 -> AT2, AT3 [AND] (sequential: AT2;AT3)**
+  - **Justification:** The robot must send the request before it can wait for the resource to be retrieved — both actions required, explicit order.
+
+- **G6 -> AT4, AT5 [AND] (sequential: AT4;AT5)**
+  - **Justification:** "Goes back to the recharging station **and** assigns the mission to another robot" — both actions are required and stated in that order.
+
+- **G7 -> G8, AT6, G9 [AND] FALLBACK((G8;AT6), G9)**
+  - **Justification:** Determining remaining load (G8) precedes each transport run (AT6) in normal delivery. This normal path is challenged by the explicit 30% battery condition, whose alternative is G9 — FALLBACK, forcing AND.
+
+- **G9 -> AT7, AT8, G10 [AND] FALLBACK((AT7;AT8), G10)**
+  - **Justification:** Normally the robot returns the resource to checkpoint then hands off the remaining delivery (stated in that order: "return the resource... and assign the remaining task"). This is itself challenged by an explicit failure condition ("in case of failure to return"), whose alternative is G10 — a nested FALLBACK, forcing AND.
+
+- **G10 -> AT9, AT10 [AND] (parallel: AT9#AT10)**
+  - **Justification:** Both the alert and the report are explicitly required ("an alert must be triggered and the report sent"), but no order between them is stated, so they are modeled as possibly-parallel rather than forced sequential.
+
+- **G3 -> G4, AT1 [AND]** *(goal-to-task-and-goal link, restated for clarity)* — see above.
+- **G5 -> AT2, AT3 [AND]** — see above.
+- **G6 -> AT4, AT5 [AND]** — see above.
+- **G9 -> AT7, AT8 [AND]** (within the FALLBACK's first branch) — both are required together as the "success path" of the low-battery-delivery reaction.
+- **G10 -> AT9, AT10 [AND]** — see above.
+
+---
+
+**Note:** No OR decomposition appears anywhere in this model — the mission description contains no true optional alternatives (only AND-required steps and condition-triggered FALLBACKs). The two application examples (sterile medical equipment, clean linens) are intentionally not modeled as separate goals, since they are domain instantiations of the already-generic `storage` / `DeliveryLocation` variables, and adding them would duplicate G1–G10.
+
+Would you like me to turn this into a saved document (e.g., Word or Markdown file) or a visual diagram of the goal tree?
