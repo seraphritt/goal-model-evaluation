@@ -1,0 +1,230 @@
+# Mission Decomposition: Multi-Robot Vital Signs Checking in a Hospital Ward
+
+## Step 1 — Reading the description as a mission designer
+
+Before building any table, I read the text multiple times extracting **triggers, preconditions, branching logic, loops, and escalation paths**. Here is my reasoning trail:
+
+1. **Periodicity is the mission's entry point.** "Every two hours… all patients' vital signs should be checked" tells me the whole tree sits under one **recurring root goal**, with a dedicated trigger sub-goal (G1) so the scheduling concern doesn't get buried inside the operational logic.
+
+2. **The core is an iterative "visit every occupied room" loop.** This is naturally an **Achieve** goal (G2) since it has a target state — "every occupied room processed" — not a single action.
+
+3. **Pre-entry checks are queries with recovery, not simple actions.** "Check if patient is available" and "check if there is enough battery" are **Query** goals (they return a boolean), but each one has an explicit recovery behavior described in the text (wait 5 minutes / recharge + reassign). I model each as a **Query goal carrying its own FALLBACK runtime** — a deliberate, explicit design choice, since strict goal-modeling purists separate "query" from "action," but the mission text fuses them, and separating them further would fragment a tightly-coupled check-then-react pattern.
+
+4. **Patient identification is a genuine OR, not a fallback.** "Either by asking or by scanning the barcode" — the text gives no preference order or retry logic between the two, so I treat this as **OR (interchangeable means to the same end)**, distinct from FALLBACK (which implies an ordered primary/backup).
+
+5. **Vital-sign sets are condition-gated, not mutually exclusive.** A patient could be *both* diabetic *and* post-surgical. If I modeled this as plain OR ("satisfy one branch and you're done"), a diabetic post-surgical patient would be under-checked. I instead model it as an **AND of conditionally-activated branches** — every branch whose triggering condition is true *must* run; branches whose condition is false are simply not instantiated. This is a key reasoning point I want to flag explicitly because it's easy to mis-model as a simple OR.
+
+6. **Failure-handling belongs under vital-sign collection, not beside it.** "Failure of collecting any vital sign triggers questions" is a **recovery of a specific step**, not an independent stage every room visit performs. I nest it as a FALLBACK child of "Collect Vital Signs," not as a sibling phase of the room visit — this avoids implying every patient is always subjected to the questioning stage.
+
+7. **Non-response is a second-level fallback inside the first.** "In case of non-response, alert nurse/doctor" is a fallback *of the fallback* (ask questions → if that also fails → escalate to a human). Two nested FALLBACK levels, both AND per the given rule.
+
+8. **Hygiene protocols (sterilization, actuator disinfection) are conditional-AND, like the vital signs case.** They are not alternatives to anything — they are mandatory *when their triggering condition holds* (infectious-disease room / physical patient contact), and these conditions are independent of each other and of the vital-sign conditions.
+
+9. **High-risk prioritization is a scheduling constraint, not a branch of the room-visit procedure.** It governs *order*, not *content*, of G2.2's instantiation, so I model it as a sibling sub-goal of G2 that produces/enforces a schedule, rather than embedding it inside the room-visit template.
+
+10. **Multi-robot reallocation and manager escalation form a mission-level, two-tier FALLBACK**, separate from the per-room logic: (i) try to finish with the currently assigned robot(s); (ii) if infeasible, bring in additional robots; (iii) if *no combination* of robots works, escalate to a human (the site manager). This mirrors the text's own three-tier structure almost verbatim.
+
+11. **Local task reassignment vs. mission-level robot reallocation are different concerns.** "If there is not enough battery… the tasks need to be reassigned" is a *local* hand-off of one robot's remaining room-list, whereas "additional robots can be assigned… impossibility of performing the mission in required time" is a *mission-level* scaling decision. I keep these as two distinct tasks/goals but cross-reference them, since a failed local reassignment (no idle robot available) is precisely what should trigger the mission-level mechanism.
+
+**Explicit assumptions I'm making (stated for transparency):**
+- Patient identification (ask/scan) happens *after* entering the room, at the bedside — barcode scanning needs physical proximity, and this keeps the pre-entry checks patient-record-based rather than requiring physical presence first.
+- "High risk" is treated as an independent scheduling attribute, not a new vital-sign set (it doesn't add new measurements, only urgency).
+- All activity is in a hospital; I further distinguish sub-locations (room, corridor, charging dock, nurse station, management office) for realism.
+- One robot per room instance; multiple rooms can be processed concurrently once more than one robot is active.
+
+---
+
+## Step 2 — Goal tree overview (for orientation before the tables)
+
+```
+G0  Hospital Vital Signs Mission
+├── G1   Trigger Periodic Mission Cycle
+├── G2   Visit & Process All Occupied Rooms
+│   ├── G2.1  Prioritize High-Risk Patients
+│   └── G2.2  Process Single Room Visit  (instantiated per occupied room)
+│       ├── G2.2.1  Perform Pre-Entry Checks
+│       │   ├── G2.2.1.1  Confirm Patient Availability        [FALLBACK]
+│       │   └── G2.2.1.2  Confirm Sufficient Battery          [FALLBACK]
+│       ├── G2.2.2  Identify Correct Patient                   [OR]
+│       ├── G2.2.3  Conduct In-Room Vital Signs Procedure
+│       │   ├── G2.2.3.1  Prepare Patient (approach/announce/instruct)
+│       │   └── G2.2.3.2  Collect Condition-Required Vital Signs
+│       │       ├── G2.2.3.2.1  Infectious-Disease Vital Set
+│       │       ├── G2.2.3.2.2  Post-Surgical Vital Set
+│       │       ├── G2.2.3.2.3  Diabetes Vital (Glucose)
+│       │       └── G2.2.4  Handle Vital-Sign Collection Failure  [FALLBACK]
+│       │           ├── G2.2.4.1  Conduct Verbal Assessment
+│       │           └── G2.2.4.2  Alert Responsible Nurse/Doctor
+│       └── G2.2.5  Complete and Exit Room
+├── G3   Ensure Mission Timeliness (Multi-Robot Reallocation)   [FALLBACK]
+│   ├── G3.1  Monitor Remaining Time/Workload Budget
+│   └── G3.2  Assign Additional Robot(s)
+└── G4   Escalate Mission Infeasibility to Site Manager (fallback of G3)
+```
+
+---
+
+## Step 3 — Goals Table
+
+| Name | Text | Runtime | Goal Type | Relation | Justification |
+|---|---|---|---|---|---|
+| **G0 – Hospital Vital Signs Mission** | The complete, recurring mission of checking all patients' vital signs across the ward. | `[;]` then `[#]` (G1 sequential first; G2 and G3 run in parallel, monitoring each other) | **Achieve** — Target Condition: every occupied room's patient(s) checked per protocol within the 2-hour cycle; high-risk patients checked ≤15 min; all failures handled or escalated. | AND | Root goal synthesizing every obligation in the text; none of the sub-concerns (trigger, visiting, timeliness, escalation) is optional. |
+| **G1 – Trigger Periodic Mission Cycle** | Initiate a new mission instance every two hours. | `[;]` (single recurring action) | **Perform** | AND | "Every two hours… should be checked" is an explicit periodicity requirement, modeled as a dedicated trigger so scheduling isn't buried in operational logic. |
+| **G2 – Visit & Process All Occupied Rooms** | Visit every occupied room and ensure its patient(s) are checked, respecting high-risk priority. | `[;]` (G2.1 schedules, then G2.2 executes); G2.2 instances run `[#]` across robots | **Achieve** — Target Condition: all occupied rooms visited and their patients processed. | AND | "The assigned robot should visit every occupied room" is the mission's operational core; priority scheduling must precede/guide execution. |
+| **G2.1 – Prioritize High-Risk Patients** | Determine and enforce a visiting order placing high-risk patients first. | `[;]` (single scheduling step, then feeds G2.2's ordering) | **Achieve** — Target Condition: all high-risk patients' vitals checked within the first 15 minutes of the mission. | AND | Explicit hard deadline: "All patients in high risk must be checked in the first 15 minutes." Modeled as an ordering constraint, not a content change, since it affects *when*, not *what*, is checked. |
+| **G2.2 – Process Single Room Visit** | Full procedure executed once per occupied room: checks, identification, in-room procedure, exit. | `[;]` (strict sequence: checks → identify → procedure → exit) | **Achieve** — Target Condition: current room's patient(s) checked, marked done, robot ready to continue. | AND | Reusable template instantiated once per room; each stage is a hard precondition for the next (can't identify before entering area, can't collect vitals before approaching, etc.). |
+| **G2.2.1 – Perform Pre-Entry Checks** | Verify patient availability and battery sufficiency before entering. | `[#]` (both checks are independent and can be evaluated concurrently) | **Achieve** — Target Condition: patient available AND battery sufficient for all in-room tasks. | AND | "Before entering the room, the robot must check if the patient is available… and if there is enough battery" — two independent, concurrently-checkable conditions, both mandatory. |
+| **G2.2.1.1 – Confirm Patient Availability** | Determine if the patient can currently undergo vital-signs checking. | `FALLBACK(Proceed if available, Wait 5 min & Retry)` | **Query** — QueriedProperty: patient availability (available / not available). | AND *(fallback rule)* | "If the patient is not available, the robot should come back in 5 minutes" is a literal fallback branch on a boolean query. |
+| **G2.2.1.2 – Confirm Sufficient Battery** | Determine if the robot has enough charge for all tasks inside the room. | `FALLBACK(Proceed if sufficient, Recharge & Reassign Tasks)` | **Query** — QueriedProperty: battery sufficiency (sufficient / insufficient). | AND *(fallback rule)* | "If there is not enough battery, the robot should recharge and the tasks need to be reassigned" — explicit two-part recovery action, chained as one fallback branch. |
+| **G2.2.2 – Identify Correct Patient** | Determine which patient/bed is the intended target in multi-bed rooms. | `[;]` (one of two interchangeable methods is executed) | **Achieve** — Target Condition: correct patient identity confirmed. | **OR** | "Rooms may have one or more beds… identify the correct patient either by asking or by scanning the barcode" — two equally valid means to the same end, no ordering/preference implied, hence OR (not FALLBACK). |
+| **G2.2.3 – Conduct In-Room Vital Signs Procedure** | Prepare the patient, then collect all condition-required vital signs. | `[;]` (must inform the patient before measuring) | **Achieve** — Target Condition: patient informed and all applicable vital signs collected (directly or via recovery). | AND | "Once inside the room, the robot should approach the patient, announce the procedure… and provide instructions" precedes measurement logically and textually. |
+| **G2.2.3.1 – Prepare Patient for Procedure** | Approach, announce the procedure, and give instructions. | `[;]` (approach → announce → instruct, in order) | **Perform** | AND | Direct transcription of the sequence given: "approach the patient, announce the procedure to be performed, and provide instructions." |
+| **G2.2.3.2 – Collect Condition-Required Vital Signs** | Collect the vital-sign set(s) applicable to this patient's condition(s), recovering from any collection failure. | `[#]` (applicable condition-sets have no dependency between them) | **Achieve** — Target Condition: every vital sign required by the patient's actual condition(s) is collected or successfully status-assessed. | **AND** *(conditionally-gated, not exclusive OR — see reasoning §5)* | A patient can be diabetic **and** post-surgical simultaneously, so this cannot be a true either/or; every condition that applies must be satisfied. I deliberately reject plain OR here to avoid under-checking co-morbid patients. |
+| **G2.2.3.2.1 – Infectious-Disease Vital Set** | Check heart rate, blood pressure, temperature, and blood oxygenation. | `[#]` (no precedence between the four measurements) | **Achieve** — Target: HR + BP + Temp + SpO2 collected. | AND | "Patients subject to infectious diseases must be checked for heart rate, blood pressure, body temperature, and blood oxygenation" — explicit AND-set. |
+| **G2.2.3.2.2 – Post-Surgical Vital Set** | Check heart rate and blood oxygenation. | `[#]` | **Achieve** — Target: HR + SpO2 collected. | AND | "Patients subject to post-surgical conditions must be checked for heart rate and blood oxygenation." |
+| **G2.2.3.2.3 – Diabetes Vital (Glucose)** | Check blood glucose level. | `[;]` (single measurement) | **Achieve** — Target: glucose level collected. | AND *(trivial single-child)* | "Patients with a history of diabetes must be checked for glucose levels in the blood." |
+| **G2.2.4 – Handle Vital-Sign Collection Failure** | Recover from a failed sensor-based reading via questioning, escalating on non-response. | `FALLBACK(G2.2.4.1, G2.2.4.2)` | **Achieve** — Target Condition: status determined for every failed sign (via patient response) or escalated to staff. | AND *(fallback rule)* | "Failure of collecting any necessary vital signs should trigger a set of questions… In case of non-response, an alert should be sent." Nested as a recovery specific to G2.2.3.2 (see reasoning §6), not a universal stage of every visit. |
+| **G2.2.4.1 – Conduct Verbal Assessment** | Ask the patient a set of questions to assess status for the signs that failed to be collected. | `[;]` | **Perform** | AND | Direct transcription: "a set of questions to assess the patient status for those signs that were failed to be collected." |
+| **G2.2.4.2 – Alert Responsible Nurse/Doctor** | Send an alert when the patient does not respond to the assessment questions. | `[;]` | **Perform** | AND *(fallback branch of G2.2.4)* | "In case of non-response, an alert should be sent to the responsible nurse/doctor" — a second-tier fallback, since it only fires if G2.2.4.1 itself fails to get a response. |
+| **G2.2.5 – Complete and Exit Room** | Mark the patient done, apply any required hygiene protocol, and move to the next room. | `[;]` (mark → sterilize if needed → disinfect if needed → proceed) | **Achieve** — Target Condition: room marked complete, applicable hygiene protocols executed, robot ready to continue the route. | **AND** *(conditionally-gated)* | "Mark it as done and proceed to the next room," plus the two independent, mandatory-when-applicable hygiene rules (sterilization for infectious rooms, actuator disinfection after patient contact) — same conditional-AND logic as G2.2.3.2, for the same reason: these conditions are independent and can co-occur. |
+| **G3 – Ensure Mission Timeliness (Multi-Robot Reallocation)** | Guarantee the 2-hour mission completes in time, scaling up robot resources if needed. | `[;]` then `FALLBACK(G3.2, G4)` (G3.1 monitors; fallback triggers only if time is insufficient) | **Achieve** — Target Condition: mission completed within the required time window, using assigned or additional robots. | AND *(fallback rule)* | "Additional robots can be assigned to help in case of impossibility of performing the mission in the required time" — this is a mission-level contingency layered over, not inside, the per-room logic. |
+| **G3.1 – Monitor Remaining Time/Workload Budget** | Continuously estimate whether current robots can finish on time. | `[;]` | **Query** — QueriedProperty: time/workload sufficiency (sufficient / insufficient). | AND | Implicit but necessary precondition for triggering reallocation — the text's "in case of impossibility" presupposes a feasibility check. |
+| **G3.2 – Assign Additional Robot(s)** | Bring in extra robot(s) and redistribute remaining rooms when the current fleet cannot finish in time. | `[;]` | **Achieve** — Target Condition: additional robot(s) integrated and remaining workload completed in time. | AND *(fallback branch of G3)* | Direct transcription of the additional-robots clause. |
+| **G4 – Escalate Mission Infeasibility to Site Manager** | Notify the responsible site manager when no robot combination can complete the mission. | `[;]` | **Perform** | AND *(deepest fallback of G3)* | "The responsible manager for the site must be alerted if no combination of robots can complete the mission" — the mission's terminal, human-in-the-loop failure path. |
+
+---
+
+## Step 4 — Tasks Table
+
+| Name | Text | Relation | Location | # Robots | Justification |
+|---|---|---|---|---|---|
+| **AT1 – Start/Trigger Mission Cycle** | Fire the 2-hour timer that starts a new mission instance. | AND | Hospital – Fleet/Base Station | 0 (system-level trigger) | Implements G1's periodicity requirement. |
+| **AT2 – Navigate to Room** | Move the robot to the next scheduled room's door. | AND | Hospital – Corridor | 1 | Implicit precursor to any pre-entry check; a robot must physically reach the door first. |
+| **AT3 – Sense/Ask Patient Availability** | Query sensors or ask staff/patient whether vitals can be checked now. | AND | Hospital – Corridor / Room door | 1 | Implements the availability check of G2.2.1.1. |
+| **AT4 – Wait 5 Minutes & Retry** | Pause and re-attempt the availability check. | AND | Hospital – Corridor | 1 | Direct transcription: "come back in 5 minutes." |
+| **AT5 – Check Battery Level** | Read current charge level and compare against task-energy estimate. | AND | Hospital – Corridor / Room door | 1 | Implements the battery check of G2.2.1.2. |
+| **AT6 – Recharge Battery** | Travel to and use a charging station. | AND | Hospital – Charging Station | 1 | Direct transcription: "the robot should recharge." |
+| **AT7 – Reassign Pending Room Tasks** | Hand off this robot's remaining room-visit list to another available robot or reschedule it. | AND | Hospital – Fleet/Base Station | 1 (originating) + coordination with fleet | Direct transcription: "the tasks need to be reassigned." Distinct from AT25 — this is a *local* hand-off, which escalates to AT25 only if no idle robot is available (cross-link to G3). |
+| **AT8 – Ask Patient for Identity** | Verbally confirm the patient's identity. | **OR** (with AT9) | Hospital – Patient Room | 1 | One of the two interchangeable identification methods (G2.2.2). |
+| **AT9 – Scan Patient Barcode** | Scan the patient's wristband barcode. | **OR** (with AT8) | Hospital – Patient Room | 1 | Second interchangeable identification method. |
+| **AT10 – Enter Room** | Physically enter the hospital room. | AND | Hospital – Room entrance | 1 | Implicit action gating the in-room procedure; separates "pre-entry" from "in-room" stages per the text's own structure. |
+| **AT11 – Approach Patient** | Move to the patient's bedside. | AND | Hospital – Patient Room | 1 | Direct transcription of G2.2.3.1. |
+| **AT12 – Announce Procedure** | Verbally state the procedure about to be performed. | AND | Hospital – Patient Room | 1 | Direct transcription. |
+| **AT13 – Provide Instructions** | Give the patient instructions needed for the procedure. | AND | Hospital – Patient Room | 1 | Direct transcription. |
+| **AT14 – Measure Heart Rate** | Perform HR measurement. | AND | Hospital – Patient Room | 1 | Shared leaf task reused by both G2.2.3.2.1 (infectious) and G2.2.3.2.2 (post-surgical) — shown explicitly to avoid duplicating sensor logic. |
+| **AT15 – Measure Blood Pressure** | Perform BP measurement. | AND | Hospital – Patient Room | 1 | Required only for infectious-disease patients. |
+| **AT16 – Measure Body Temperature** | Perform temperature measurement. | AND | Hospital – Patient Room | 1 | Required only for infectious-disease patients. |
+| **AT17 – Measure Blood Oxygenation** | Perform SpO2 measurement. | AND | Hospital – Patient Room | 1 | Shared leaf task, same reasoning as AT14. |
+| **AT18 – Measure Blood Glucose** | Perform glucose measurement. | AND | Hospital – Patient Room | 1 | Required only for diabetic-history patients. |
+| **AT19 – Ask Assessment Questions** | Ask the patient the status-assessment questions for failed signs. | AND | Hospital – Patient Room | 1 | Direct transcription (G2.2.4.1). |
+| **AT20 – Send Alert to Nurse/Doctor** | Transmit a non-response alert to responsible staff. | AND | Hospital – Nurse Station (remote notification) | 1 (sender) + human recipient | Direct transcription (G2.2.4.2). |
+| **AT21 – Mark Patient as Checked** | Update the patient/room record as completed. | AND | Hospital – Patient Room | 1 | Direct transcription: "mark it as done." |
+| **AT22 – Sterilize Robot** | Run the sterilization routine before leaving. | **AND** (conditional: only if infectious-disease room) | Hospital – Room exit / corridor | 1 | "When a robot comes out of a room where a patient subject to infectious disease is being treated, it must be sterilized." |
+| **AT23 – Disinfect Actuators** | Disinfect manipulator/actuators used for physical contact. | **AND** (conditional: only if patient contact occurred) | Hospital – Room exit / corridor | 1 | "If the robot is performing any duties with patient contact… it should disinfect its actuators afterwards." |
+| **AT24 – Proceed to Next Room** | Navigate to the next scheduled room. | AND | Hospital – Corridor | 1 | Direct transcription: "proceed to the next room." |
+| **AT25 – Deploy/Integrate Additional Robot(s)** | Bring one or more extra robots online and assign them pending rooms. | AND | Hospital – Fleet/Base Station | 1+ (variable, as many as needed) | Mission-level scaling mechanism of G3.2, distinct from the local AT7 reassignment. |
+| **AT26 – Alert Site Manager** | Notify the human site manager that the mission cannot be completed by any robot combination. | AND | Hospital – Management Office (remote notification) | 1 (reporting robot/coordinator) + human recipient | Direct transcription of G4. |
+| **AT27 – Compute/Apply Priority Schedule** | Build the visiting order placing high-risk rooms first, targeting the 15-minute deadline. | AND | Hospital – Fleet/Base Station | 1 (coordinator) | Implements G2.1's scheduling requirement. |
+| **AT28 – Estimate Remaining Time/Workload** | Continuously compute whether remaining rooms can be finished within the time budget. | AND | Hospital – Fleet/Base Station | 1 (coordinator) | Implements G3.1's monitoring requirement. |
+
+---
+
+## Step 5 — Summary Table (Goals + Tasks)
+
+| ID | Title | Type | Parent |
+|---|---|---|---|
+| G0 | Hospital Vital Signs Mission | Goal | — |
+| G1 | Trigger Periodic Mission Cycle | Goal | G0 |
+| G2 | Visit & Process All Occupied Rooms | Goal | G0 |
+| G2.1 | Prioritize High-Risk Patients | Goal | G2 |
+| G2.2 | Process Single Room Visit | Goal | G2 |
+| G2.2.1 | Perform Pre-Entry Checks | Goal | G2.2 |
+| G2.2.1.1 | Confirm Patient Availability | Goal | G2.2.1 |
+| G2.2.1.2 | Confirm Sufficient Battery | Goal | G2.2.1 |
+| G2.2.2 | Identify Correct Patient | Goal | G2.2 |
+| G2.2.3 | Conduct In-Room Vital Signs Procedure | Goal | G2.2 |
+| G2.2.3.1 | Prepare Patient for Procedure | Goal | G2.2.3 |
+| G2.2.3.2 | Collect Condition-Required Vital Signs | Goal | G2.2.3 |
+| G2.2.3.2.1 | Infectious-Disease Vital Set | Goal | G2.2.3.2 |
+| G2.2.3.2.2 | Post-Surgical Vital Set | Goal | G2.2.3.2 |
+| G2.2.3.2.3 | Diabetes Vital (Glucose) | Goal | G2.2.3.2 |
+| G2.2.4 | Handle Vital-Sign Collection Failure | Goal | G2.2.3.2 |
+| G2.2.4.1 | Conduct Verbal Assessment | Goal | G2.2.4 |
+| G2.2.4.2 | Alert Responsible Nurse/Doctor | Goal | G2.2.4 |
+| G2.2.5 | Complete and Exit Room | Goal | G2.2 |
+| G3 | Ensure Mission Timeliness | Goal | G0 |
+| G3.1 | Monitor Remaining Time/Workload | Goal | G3 |
+| G3.2 | Assign Additional Robot(s) | Goal | G3 |
+| G4 | Escalate Mission Infeasibility to Site Manager | Goal | G3 |
+| AT1–AT28 | (see Tasks table) | Task | various (above) |
+
+---
+
+## Step 6 — Logical Relationships
+
+**G0 → G1 [AND][sequential]**
+- **Justification**: The mission must first be triggered before any room visiting can start.
+
+**G0 → G2, G3 [AND][(parallel)]**
+- **Justification**: Once triggered, room-visiting (G2) and timeliness-monitoring (G3) run concurrently — G3 must watch G2's progress in real time to decide whether reallocation is needed, not after G2 finishes.
+
+**G2 → G2.1, G2.2 [AND][(sequential)]**
+- **Justification**: The priority schedule (G2.1) must be computed/available before or as G2.2 begins executing visits in that order.
+
+**G2.2 → G2.2.1, G2.2.2, G2.2.3, G2.2.5 [AND][(sequential)]**
+- **Justification**: Strict precedence: checks must pass before identification; identification before the procedure; the procedure before closing the room.
+
+**G2.2.1 → G2.2.1.1, G2.2.1.2 [AND][(parallel)]**
+- **Justification**: Patient availability and battery level are independent conditions with no dependency on each other; both must hold before entry.
+
+**G2.2.1.1 → "Proceed", "Wait 5 min & Retry" [AND][FALLBACK(Proceed, Wait & Retry)]**
+- **Justification**: "If the patient is not available, the robot should come back in 5 minutes" is a textbook primary/fallback pair.
+
+**G2.2.1.2 → "Proceed", AT6, AT7 [AND][FALLBACK(Proceed, (AT6 # AT7))]**
+- **Justification**: Insufficient battery triggers two things together (recharge *and* reassign), so the fallback branch itself is an AND of two parallel recovery actions.
+
+**G2.2.2 → AT8, AT9 [OR][(not concurrent — single choice)]**
+- **Justification**: "Either by asking or by scanning" explicitly offers two interchangeable, non-ordered means of satisfying the same goal.
+
+**G2.2.3 → G2.2.3.1, G2.2.3.2 [AND][(sequential)]**
+- **Justification**: The patient must be informed/instructed before any measurement is attempted ("approach… announce… instructions" precedes vitals in the text).
+
+**G2.2.3.1 → AT11, AT12, AT13 [AND][(sequential)]**
+- **Justification**: Natural, textually-ordered sequence: approach, then announce, then instruct.
+
+**G2.2.3.2 → G2.2.3.2.1, G2.2.3.2.2, G2.2.3.2.3 [AND][(parallel)]**
+- **Justification**: Each condition-set is independently and conditionally activated; a patient may match more than one condition (e.g., diabetic + post-surgical), so all matching sets must run. I deliberately avoid OR here — see reasoning step 5.
+
+**G2.2.3.2.1 → AT14, AT15, AT16, AT17 [AND][(parallel)]**
+- **Justification**: "Must be checked for heart rate, blood pressure, body temperature, and blood oxygenation" is an explicit, unconditional AND-set with no stated precedence.
+
+**G2.2.3.2.2 → AT14, AT17 [AND][(parallel)]**
+- **Justification**: "Must be checked for heart rate and blood oxygenation" — same reasoning, reusing shared leaf tasks already defined for the infectious-disease set.
+
+**G2.2.3.2.3 → AT18 [AND][(sequential, single task)]**
+- **Justification**: Single required measurement for diabetic history.
+
+**G2.2.3.2 → G2.2.4 [AND][FALLBACK(G2.2.3.2.x success, G2.2.4)]**
+- **Justification**: G2.2.4 only activates when a required sign fails to be collected — a recovery path of vital-sign collection specifically, not a universal stage of every visit.
+
+**G2.2.4 → G2.2.4.1, G2.2.4.2 [AND][FALLBACK(G2.2.4.1, G2.2.4.2)]**
+- **Justification**: "Trigger a set of questions… In case of non-response, an alert should be sent" is a second fallback layer nested inside the first.
+
+**G2.2.5 → AT21, AT22, AT23, AT24 [AND][(sequential)]**
+- **Justification**: Marking done, then any applicable hygiene step(s), then moving on — AT22/AT23 are conditionally-gated but mandatory when their condition (infectious room / patient contact) holds, hence AND rather than OR, consistent with the same conditional-AND reasoning used for G2.2.3.2.
+
+**G3 → G3.1, G3.2, G4 [AND][(sequential) then FALLBACK(G3.2, G4)]**
+- **Justification**: G3.1 continuously monitors feasibility; only if it detects insufficiency does the fallback chain (add robots → if still infeasible, escalate) activate. "Additional robots can be assigned… impossibility" then "manager must be alerted if no combination… can complete" are explicitly two tiers of the same contingency.
+
+**G3.2 → AT25 [AND]**
+- **Justification**: Direct mapping of the mission-level reallocation action.
+
+**G4 → AT26 [AND]**
+- **Justification**: Direct mapping of the escalation action.
+
+**G2.1 → AT27 [AND]**, **G3.1 → AT28 [AND]**
+- **Justification**: Both are single coordination computations with no internal branching described in the text.
+
+---
+
+Would you like me to turn this into a downloadable file (e.g., a diagram-ready Markdown/Word document, or a visual goal tree)?
