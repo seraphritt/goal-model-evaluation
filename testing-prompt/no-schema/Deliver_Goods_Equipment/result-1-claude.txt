@@ -1,0 +1,186 @@
+# Mission Analysis: Resource Collection & Delivery (Multi‑Robot System)
+
+Before building the model, I worked through the description as a mission designer would — identifying the trigger, the actors, the phases, the decision points, and (most importantly) the exception paths, since those are usually where goal models go wrong if you rush them.
+
+## Step‑by‑step reasoning
+
+**1. Find the root goal and its trigger.**
+The first sentence — *"When required, a robot must collect the required resources in the storage and deliver them to the requesting agent in a specified location"* — is a complete service contract: a trigger ("when required"), an actor (a robot), and an end-state (resources in the requester's hands, at a place). This is a classic **Achieve** goal with a clear **Target Condition**, so it becomes my root, **G0**.
+
+**2. Separate "deciding who does it" from "doing it."**
+The last paragraph introduces something easy to miss if you only read linearly: *"When multiple items are required from different storages, multiple robots can be assigned to parallel collect-deliver tasks."* This is not a step inside the collection or delivery phase — it's a **prior decision** about how many robots to use and which storages each one covers. I gave this its own goal (**G1**) rather than folding it into collection, because (a) it must be resolved *before* any robot starts moving, and (b) it is explicitly justified by a time-minimization objective ("to reduce the time to finish the mission"), which is the same justification pattern used for the storage-visit ordering goal. That made me classify both as **Query** goals rather than Achieve goals — their output is a decision/estimate, not a physical state.
+
+**3. Respect the explicit phase sequencing.**
+*"Once retrieved, the delivery phase begins"* is an unambiguous sequential constraint. So collection (**G2.1**) and delivery (**G2.2**) are AND-decomposed **sequentially**, never in parallel, inside a single robot's mission execution goal (**G2**).
+
+**4. Collection phase: separate "where to go" from "going."**
+The order of storages is *computed* ("defined by the estimation of waiting time summed up with the path to be run"), then *executed* (go → request → wait). I modeled the computation as a Query goal (**G2.1.1**) and the physical retrieval loop as an Achieve goal (**G2.1.2**), because retrieval has a real completion condition (resource physically obtained) while ordering only produces information.
+
+**5. Battery handling is a *fallback*, not a *sequel*.**
+This was the key design decision. The battery clauses ("if battery runs low… the robot goes back…") don't happen *after* collection/delivery — they can interrupt it at any moment. A sequential model (collect, THEN check battery) would misrepresent this. I modeled it as **FALLBACK(primary, battery-goal)**: the robot pursues the primary task until/unless the threshold is crossed, at which point the fallback preempts it. This also explains why I kept the 10%‑collection case and the 30%‑delivery case as **two distinct goals** rather than merging them: different thresholds, different target conditions (recharge+reassign vs. checkpoint+reassign), different task sets, and the text clearly ties each to its own phase.
+
+**6. Spot the *fallback of a fallback*.**
+Re-reading carefully: *"...assign the remaining task to another robot, **which will know where the resource is positioned**. In case of failure to return the resource to a checkpoint, an alert must be triggered..."* The clause "which will know where the resource is positioned" is a hidden precondition: reassignment is only valid *after* the checkpoint deposit succeeds. If the deposit itself fails, the text gives a *different* outcome (alert + report to a human). This is a second, nested FALLBACK — the system escalates to human intervention only when its own automated recovery (checkpoint deposit) breaks. I modeled this as **G2.2.2.1**, nested inside the delivery battery-management goal.
+
+**7. Why collection has a planning sub-goal but delivery doesn't.**
+Collection may involve *several* storages (hence an ordering decision is needed). Delivery always targets *one* specified location, so there's nothing to "order" — only to repeat ("as many runs as necessary"). This asymmetry is intentional and mirrors the text.
+
+**8. Where does multi-robot parallelism actually live?**
+It does **not** live inside any single task (no task needs two robots acting jointly). It lives at the **instantiation level**: G1 decides *N*, and G2 (the whole collect-deliver cycle) is spawned **N times in parallel**, one per robot/storage-subset. This matches the text precisely: "parallel collect-deliver **tasks**" means parallel *missions*, not parallel *actions within one mission*.
+
+**9. Goal-type discipline.**
+I deliberately avoided forcing a "Perform" goal type anywhere above the task level: every composite node in this mission either has a real end-state (Achieve) or produces a decision/estimate (Query). Perform-type behavior (bare actions with no interesting end-state) is what the **Tasks** represent — this keeps the taxonomy honest rather than decorative.
+
+**10. Relation discipline (AND vs OR).**
+Nothing in the description offers the robot a genuine *choice* between equally valid alternatives — every branch is either a mandatory step or a conditional/preemptive exception. I therefore used **AND** everywhere (as required for FALLBACK nodes anyway) and explicitly did *not* introduce artificial OR-branches just for variety, since that would misrepresent a deterministic procedure as having optional paths it doesn't have.
+
+**Assumptions I made explicit (since the text doesn't state them):**
+- Battery level is monitored continuously, not at discrete checkpoints — this is what makes FALLBACK semantics (preemption) correct instead of plain sequencing.
+- "Checkpoint" is a predefined physical waypoint, distinct from the recharging station and from the final delivery location.
+- Multiple resources requested from the *same* storage are covered by a single request message (AT5), consistent with "the precise specification of the **requested resources**" being plural.
+- G1 (allocation) may be executed by a central fleet coordinator or via inter-robot negotiation — the text specifies the *outcome* (parallel assignment), not the mechanism, so I left this generic.
+
+---
+
+## Goal hierarchy (overview)
+
+```
+G0  Fulfill Resource Request                                                [Achieve]
+├─(seq)── G1  Allocate Robot(s) to Resource Request                        [Query]
+│          └── AT1
+└─(seq)── G2  Execute Collect-and-Deliver Mission  (×N in parallel if N robots) [Achieve]
+           ├─(seq)── G2.1  Collection Phase                                 [Achieve]
+           │         ├─(seq)── G2.1.1 Plan Storage Visiting Order           [Query]
+           │         │          └── AT2 ; AT3
+           │         └── FALLBACK
+           │              ├─ primary:  G2.1.2 Retrieve Resources from Storages  [Achieve]
+           │              │             └── AT4 ; AT5 ; AT6  (repeat per storage)
+           │              └─ fallback: G2.1.3 Manage Low Battery – Collection    [Achieve]
+           │                            └── AT7 # AT8
+           └── FALLBACK
+                ├─ primary:  G2.2.1 Transport Resources to Destination      [Achieve]
+                │             └── AT9 ; AT10  (repeat per run)
+                └─ fallback: G2.2.2 Manage Low Battery – Delivery           [Achieve]
+                              └── FALLBACK
+                                   ├─ primary:  AT11 ; AT12
+                                   └─ fallback: G2.2.2.1 Handle Checkpoint Return Failure [Achieve]
+                                                 └── AT13 ; AT14
+```
+
+---
+
+## Goals Table
+
+| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation | Justification |
+|---|---|---|---|---|---|---|
+| **G0 – Fulfill Resource Request** | Upon request, ensure the required resource(s) are collected from storage and delivered to the requesting agent at the specified location. | [G1 ; G2] | Achieve | Requested resource(s) are in the possession of the requesting agent at the specified location. | AND | Root obligation stated verbatim: *"a robot must collect the required resources... and deliver them to the requesting agent in a specified location."* Event-triggered by "When required." Allocation must precede execution. |
+| **G1 – Allocate Robot(s) to Resource Request** | Decide how many robots are needed and which storage(s)/resource(s) each is responsible for, enabling parallel execution across storages. | AT1 | Query | Mapping {robot → storage/resource subset} that covers the full request while minimizing total completion time. | AND | *"When multiple items are required from different storages, multiple robots can be assigned to parallel collect-deliver tasks to reduce the time to finish the mission."* Decision/estimation nature mirrors the Query typing used for G2.1.1. |
+| **G2 – Execute Collect-and-Deliver Mission** | For its assigned resource/storage subset, a robot runs the full collect-then-deliver cycle. Instantiated once per allocated robot; multiple instances run in parallel when G1 allocates >1 robot. | [G2.1 ; G2.2] | Achieve | All resources assigned to this robot instance are retrieved **and** delivered. | AND | *"Once retrieved, the delivery phase begins"* — explicit, mandatory sequencing; delivery cannot start before collection completes for its resources. |
+| **G2.1 – Collection Phase** | Visit the relevant storage(s) in a planned order and retrieve the requested resource(s), while monitoring battery. | [G2.1.1 ; FALLBACK(G2.1.2, G2.1.3)] | Achieve | All assigned resources retrieved from their storages (or task handed off on low battery). | AND | Named directly: *"In the collection phase, the robot must go to the storage places..."* Battery clause can preempt retrieval at any time, hence FALLBACK rather than a sequential follow-up. |
+| **G2.1.1 – Plan Storage Visiting Order** | Compute the order in which storages will be visited. | [AT2 ; AT3] | Query | Ordered list of storages, ascending by (estimated waiting time + estimated path time). | AND | *"The order to be followed is defined by the estimation of waiting time summed up with the path to be run by the robot."* Pure information computation → Query. |
+| **G2.1.2 – Retrieve Resources from Storages** | For each storage in order: arrive, request the resource, and wait for retrieval; repeat for all storages. | [AT4 ; AT5 ; AT6] (sequential; repeats per storage) | Achieve | Requested resource at the current storage has been physically retrieved. | AND | *"...the robot sends a message to the storage with the precise specification of the requested resources and waits until the resources have been retrieved."* Clear completion condition → Achieve. |
+| **G2.1.3 – Manage Low Battery during Collection** | On battery ≤10% during collection: return to recharging station and hand off the pending collection task. | [AT7 # AT8] | Achieve | Robot is returning to the recharging station **and** the pending task has been reassigned to another robot. | AND | *"If the battery of the assigned robot runs low (10%) in the collection phase, the robot goes back to the recharging station and assigns the mission to another robot."* No resource yet held → reassignment has no positional dependency → can run in parallel with the return trip. |
+| **G2.2 – Delivery Phase** | Transport all collected resources to the destination, repeating runs as necessary, while monitoring battery. | FALLBACK(G2.2.1, G2.2.2) | Achieve | All collected resources have arrived at the requesting agent's location (or remaining task safely handed off on low battery). | AND | Named directly: *"In this phase, the robot will make as many runs as necessary..."* 30% battery clause can preempt transport mid-run → FALLBACK, mirroring the collection-phase structure. |
+| **G2.2.1 – Transport Resources to Destination** | Make as many trips as needed until every collected resource is delivered. | [AT9 ; AT10] (sequential; repeats per run) | Achieve | Every resource collected in G2.1 is physically present at the destination. | AND | *"...the robot will make as many runs as necessary to take all the resources to the specified location."* Iterative, state-based → Achieve, not a fixed single action. |
+| **G2.2.2 – Manage Low Battery during Delivery** | On battery ≤30% during delivery: deposit the carried resource at a checkpoint and hand off the remaining task; escalate if the deposit itself fails. | FALLBACK([AT11 ; AT12], G2.2.2.1) | Achieve | Resource safely checkpointed and remaining task reassigned (success), OR sector manager alerted/reported (failure). | AND | *"...the robot must return the resource to a checkpoint and assign the remaining task to another robot, which will know where the resource is positioned. In case of failure... an alert must be triggered..."* Reassignment is explicitly conditioned on a successful checkpoint deposit → nested fallback. |
+| **G2.2.2.1 – Handle Checkpoint Return Failure** | If the robot cannot deposit the resource at a checkpoint, raise an alert and report the failure to the sector manager. | [AT13 ; AT14] | Achieve | Alert raised **and** sector manager informed. | AND | *"In case of failure to return the resource to a checkpoint, an alert must be triggered and the report sent to the sector manager."* Only point requiring human escalation — no further automated recovery is specified. |
+
+---
+
+## Tasks Table
+
+| Name | Text | Relation | Location | Number of Robots | Justification |
+|---|---|---|---|---|---|
+| **AT1 – Compute Robot-Storage Assignment** | Determine how many robots to dispatch and which storage(s)/resource(s) each covers. | AND | Control Center / Fleet Management (centralized or negotiated) | N/A (coordinator-level, not a field robot) | Operationalizes G1; triggered specifically by requests "from different storages." |
+| **AT2 – Estimate Waiting Time and Path Cost per Storage** | For each candidate storage, estimate expected waiting time and travel time. | AND | Onboard computation (robot's current position) | 1 | Directly operationalizes "estimation of waiting time summed up with the path to be run by the robot." |
+| **AT3 – Sort Storages by Estimated Total Time** | Rank candidate storages ascending by (waiting time + path time). | AND | Onboard computation | 1 | Produces the actionable visiting order from AT2's estimates. |
+| **AT4 – Navigate to Storage Location** | Travel to the next storage in the planned order. | AND | Transit route to storage (e.g., hospital corridor to sterile-supply depot, or to a laundry room) | 1 | *"...the robot must go to the storage places where the resources can be found."* |
+| **AT5 – Send Resource Request Message to Storage** | Send the storage a message specifying the exact resource(s)/quantity needed. | AND | Storage (e.g., hospital sterile facility, laundry room) | 1 | *"...sends a message to the storage with the precise specification of the requested resources."* |
+| **AT6 – Wait for Resource Retrieval Confirmation** | Remain at the storage until the resource has been physically retrieved. | AND | Storage | 1 | *"...waits until the resources have been retrieved."* Gates the transition to the delivery phase. |
+| **AT7 – Return to Recharging Station** | Travel to the recharging station. | AND | Recharging Station | 1 | *"...the robot goes back to the recharging station..."* (10% threshold, collection phase). |
+| **AT8 – Reassign Collection Mission to Another Robot** | Hand off the unfinished collection task (remaining storages/order) to another robot. | AND | Any (wireless communication) | 1 (receiving robot) | *"...and assigns the mission to another robot."* No resource collected yet, so only mission parameters need transfer. |
+| **AT9 – Navigate to Delivery Location** | Travel from current position to the requesting agent's specified location, carrying collected resource(s). | AND | Route to destination (e.g., hospital ward/"use destination," restaurant kitchen) | 1 | Implied by "take all the resources to the specified location." |
+| **AT10 – Deliver Resource Run to Requesting Agent** | Hand over the carried resource(s) at the destination; return for another run if needed. | AND | Requesting agent's specified location | 1 | *"...deliver them to the requesting agent... the robot will make as many runs as necessary."* |
+| **AT11 – Return Resource to Checkpoint** | Navigate to the nearest checkpoint and deposit the carried resource. | AND | Checkpoint (waypoint between storage/route and destination) | 1 | *"...the robot must return the resource to a checkpoint..."* (30% threshold, delivery phase). |
+| **AT12 – Reassign Remaining Delivery Task to Another Robot** | Notify another robot of the remaining delivery and the exact checkpoint location. | AND | Any (communication action) | 1 (receiving robot) | *"...assign the remaining task to another robot, which will know where the resource is positioned."* Requires AT11 to have succeeded first. |
+| **AT13 – Trigger Alert** | Raise an immediate automated alert for the checkpoint-deposit failure. | AND | Any (onboard alert system, wherever the failure occurs) | 1 | *"...an alert must be triggered..."* |
+| **AT14 – Send Report to Sector Manager** | Compile and transmit a report of the failure (location, battery, resource, time) to the sector manager. | AND | Any (addressed to Sector Manager / control room) | 1 | *"...and the report sent to the sector manager."* Human escalation — no automated recovery is defined beyond this. |
+
+---
+
+## Summary Table
+
+| ID | Type | Title | Parent | One-line description |
+|---|---|---|---|---|
+| G0 | Goal | Fulfill Resource Request | — | Root mission: collect and deliver on request |
+| G1 | Goal | Allocate Robot(s) to Resource Request | G0 | Decide robot count & storage assignment |
+| AT1 | Task | Compute Robot-Storage Assignment | G1 | Produce the allocation mapping |
+| G2 | Goal | Execute Collect-and-Deliver Mission | G0 | One robot's full cycle (parallel across robots) |
+| G2.1 | Goal | Collection Phase | G2 | Retrieve all assigned resources |
+| G2.1.1 | Goal | Plan Storage Visiting Order | G2.1 | Compute wait+path-based order |
+| AT2 | Task | Estimate Waiting Time and Path Cost per Storage | G2.1.1 | Per-storage time estimates |
+| AT3 | Task | Sort Storages by Estimated Total Time | G2.1.1 | Produce visiting sequence |
+| G2.1.2 | Goal | Retrieve Resources from Storages | G2.1 | Visit, request, wait — per storage |
+| AT4 | Task | Navigate to Storage Location | G2.1.2 | Travel to storage |
+| AT5 | Task | Send Resource Request Message to Storage | G2.1.2 | Specify needed resource(s) |
+| AT6 | Task | Wait for Resource Retrieval Confirmation | G2.1.2 | Await hand-over |
+| G2.1.3 | Goal | Manage Low Battery during Collection | G2.1 | Recharge + reassign (10%) |
+| AT7 | Task | Return to Recharging Station | G2.1.3 | Go recharge |
+| AT8 | Task | Reassign Collection Mission to Another Robot | G2.1.3 | Hand off mission |
+| G2.2 | Goal | Delivery Phase | G2 | Deliver all collected resources |
+| G2.2.1 | Goal | Transport Resources to Destination | G2.2 | Multi-run delivery |
+| AT9 | Task | Navigate to Delivery Location | G2.2.1 | Travel to destination |
+| AT10 | Task | Deliver Resource Run to Requesting Agent | G2.2.1 | Hand over a run's load |
+| G2.2.2 | Goal | Manage Low Battery during Delivery | G2.2 | Checkpoint + reassign (30%) |
+| AT11 | Task | Return Resource to Checkpoint | G2.2.2 | Deposit carried resource |
+| AT12 | Task | Reassign Remaining Delivery Task to Another Robot | G2.2.2 | Hand off with position info |
+| G2.2.2.1 | Goal | Handle Checkpoint Return Failure | G2.2.2 | Escalate to sector manager |
+| AT13 | Task | Trigger Alert | G2.2.2.1 | Raise automated alert |
+| AT14 | Task | Send Report to Sector Manager | G2.2.2.1 | Transmit failure report |
+
+---
+
+## Logical Relationships
+
+- **G0 -> G1, G2 [AND][(sequential)]**
+  - **Justification**: Robot allocation must be resolved before execution begins; the description frames allocation as a precondition ("multiple robots *can be assigned*...") for how execution proceeds, not a concurrent activity.
+
+- **Note (instantiation, not a decomposition)**: **G1 ⟶ {G2}×N [parallel]**
+  - **Justification**: *"When multiple items are required from different storages, multiple robots can be assigned to parallel collect-deliver tasks to reduce the time to finish the mission."* Each G2 instance is a self-contained, independent collect-and-deliver cycle for the subset of storages/resources assigned by G1, so instances share no state and can execute fully in parallel — this, not intra-task collaboration, is where the mission's multi-robot scalability actually lives.
+
+- **G1 -> AT1 [AND]**
+  - **Justification**: Allocation reduces to a single computation/negotiation act; nothing in the text calls for branching or parallel sub-steps here.
+
+- **G2 -> G2.1, G2.2 [AND][(sequential)]**
+  - **Justification**: *"Once retrieved, the delivery phase begins"* is an explicit sequencing constraint — delivery cannot start before the corresponding collection completes.
+
+- **G2.1 -> G2.1.1, FALLBACK(G2.1.2, G2.1.3) [AND][(sequential) then FALLBACK]**
+  - **Justification**: The visiting order (G2.1.1) must exist before any storage visit starts. Once visiting begins, normal retrieval (G2.1.2) is the default, but is preempted the instant battery hits 10% by G2.1.3 — exactly FALLBACK semantics, not a sequential follow-up.
+
+- **G2.1.1 -> AT2, AT3 [AND][(sequential)]**
+  - **Justification**: Sorting (AT3) needs the per-storage estimates (AT2) to already exist; the text's formula (wait + path) must be computed before an order can be produced.
+
+- **G2.1.2 -> AT4, AT5, AT6 [AND][(sequential), repeated per storage]**
+  - **Justification**: The text narrates these three actions in strict order — reach, request, wait — and this triplet must repeat for every storage in G2.1.1's order until all needed resources are retrieved.
+
+- **G2.1.3 -> AT7, AT8 [AND][(parallel)]**
+  - **Justification**: No resource is yet carried at this point, so reassignment (AT8) has no dependency on the physical return trip (AT7); running them concurrently minimizes mission delay, consistent with the mission's time-sensitivity (echoed later in the parallel-robots clause).
+
+- **G2.2 -> G2.2.1, G2.2.2 [AND][FALLBACK]**
+  - **Justification**: Normal multi-run transport (G2.2.1) is the default; the 30% battery condition can interrupt it mid-delivery, so battery management (G2.2.2) is its fallback — mirroring the collection phase's structure for consistency.
+
+- **G2.2.1 -> AT9, AT10 [AND][(sequential), repeated per run]**
+  - **Justification**: Each run is inherently sequential (travel, then hand-off), and the pair repeats "as many runs as necessary" until no collected resource remains undelivered.
+
+- **G2.2.2 -> FALLBACK([AT11, AT12], G2.2.2.1) [AND][FALLBACK]**
+  - **Justification**: The text ties valid reassignment (AT12) to the successor robot "knowing where the resource is positioned" — guaranteed only once AT11 succeeds. When AT11 itself fails, the text supplies a distinct outcome (G2.2.2.1) rather than permitting an uninformed hand-off, making the two branches mutually exclusive alternatives, i.e., a fallback.
+
+- **AT11 -> AT12 [AND][(sequential)]**
+  - **Justification**: The reassignment message's content (checkpoint location) is only valid after the deposit has actually occurred.
+
+- **G2.2.2.1 -> AT13, AT14 [AND][(sequential)]**
+  - **Justification**: The text's own ordering — *"an alert must be triggered **and** the report sent"* — places the immediate, lightweight alert before the more detailed follow-up report.
+
+---
+
+A couple of things worth flagging if you want to take this further: the two domain examples (sterile medical equipment, clean linens) suggest **G0** could be triggered either on-demand ("when required") or periodically ("should periodically be moved") — the model above supports both without changes, since the trigger is external to the goal structure itself. If it would help, I can also render this hierarchy as a visual goal-tree diagram.

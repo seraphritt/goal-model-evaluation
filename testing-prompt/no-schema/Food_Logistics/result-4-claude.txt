@@ -1,0 +1,248 @@
+# Mission Analysis: Hospital Meal‑Delivery & Dish‑Retrieval Multi‑Robot System
+
+## 1. Step‑by‑Step Reasoning Process
+
+Before building the tables, I walked through the description several times, each pass extracting a different layer of the goal model.
+
+**Pass 1 — Identify the triggers (what starts a mission instance).**
+Two independent triggers are named explicitly:
+- *"The delivery is made on an order‑by‑order basis in response to kitchen delivery requests"* → delivery is **event‑driven** by the kitchen.
+- *"Someone in the room can call a robot to pick up the dishes"* → dish collection is **event‑driven** by a person in the room.
+
+Since both triggers are independent, happen for different rooms at different, potentially overlapping times, I concluded the **top‑level mission decomposes into two AND‑related, parallel branches**: *Deliver Meal Order* and *Retrieve Dirty Dishes*. They are not alternatives (OR) — the system must always be able to do both.
+
+**Pass 2 — Find the explicit alternatives ("X or Y" patterns).**
+I catalogued every disjunction in the text, because each is a candidate OR/FALLBACK decomposition:
+1. Delivery mechanism: *table placement* **or** *tray retrieval*.
+2. Tray‑retrieval cooperator: *inpatient* **or** *companion* **or** *nurse* **or** *another robot*.
+3. Door opening: cooperation with *another robot* **or** *a human*.
+4. Dish retrieval: *unassisted* **or** *two robots* **or** *robot + human*.
+5. Door opening for pickup: additionally, *the caller opens it themselves* (a new option specific to the call scenario).
+
+**Pass 3 — Find where uncertainty is explicitly named.**
+The text is unusually explicit about uncertainty twice:
+- *"Some inpatients could be unable to fetch… a companion visitor or nurse could not be available"*
+- *"This information is subject to uncertainty."*
+
+This is the most important modeling signal in the whole description. It tells me:
+- The capability check (patient record + companion presence) must be a **Query goal** whose **QueriedProperty is itself uncertain/probabilistic**, not a crisp boolean precondition.
+- Because the query can be *wrong*, the delivery‑mechanism choice (#1 above) cannot be a one‑shot decision — it needs a **runtime contingency**. This is exactly what **FALLBACK** is for: attempt the preferred/cooperative path, but guarantee completion through the autonomous path if the first one doesn't actually materialize. This is the clearest, most textually‑grounded use of FALLBACK in the whole model.
+
+**Pass 4 — Decide FALLBACK vs. plain OR for each disjunction.**
+Because the allowed runtime operators are only `[#]` (parallel), `[;]` (sequential) and `FALLBACK(...)`, I reasoned as follows:
+- If two alternatives are **mutually exclusive and contradictory to run together** (you would never place the meal on the table *and simultaneously* have it fetched from the tray), a sequential contingency is correct → **FALLBACK, Relation = AND** (per the stated convention).
+- If several alternatives **could legitimately be attempted concurrently, with only the first success mattering**, that's a genuine **OR decomposition executed in parallel** (a "race"), which is a different, equally valid pattern.
+
+I applied this distinction to the retriever‑engagement goal (#2): food gets cold while waiting, so sequentially trying inpatient → companion → nurse → robot one at a time is realistically slow and fragile. I deliberately modeled it as **OR + `[#]` parallel** (signal all plausible candidates at once, accept the first capable responder) instead of FALLBACK, and I flag this as a conscious design trade‑off (coordination overhead vs. delivery latency/food temperature), since the text does not mandate either strategy.
+
+For door‑opening and dish‑retrieval (#3, #4) there is no explicit urgency argument comparable to food temperature, and no stated preference order, so I used **FALLBACK (AND)** with a reasoned default priority (cheapest/least human‑disruptive option first) — explicitly flagged as an assumption, not a textual requirement.
+
+**Pass 5 — Identify reusable sub‑capabilities.**
+"Opening the room door" is discussed once but is clearly needed in *two* places: entering to deliver food, and entering to collect dishes. I modeled it as a **shared sub‑goal/tasks** (`G1.1.2.2`, tasks `AT3`/`AT4`) referenced again inside the pickup flow (`G1.2.2`), which additionally gets a new, cheaper first option — *"that person can signal if they can open the door"* — placed ahead of the shared fallback chain, since it's free information obtained earlier in the pickup call.
+
+**Pass 6 — Map the remaining requirements (multi‑meal handling) to goals.**
+*"Carry multiple meals… indicate which meal… track when and where… alert if wrong meal"* are four distinct, sequentially‑dependent obligations that only apply to the tray‑retrieval branch (they're meaningless for table delivery, where the robot itself places the known meal). I grouped them under `G1.1.4.1` (Tray‑Based Delivery): *engage retriever → indicate meal → monitor & validate (log + check + conditional alert)*.
+
+**Pass 7 — Assign goal types (Perform / Query / Achieve).**
+Using a KAOS‑style reading: goals that acquire information → **Query** (with `QueriedProperty`); goals with a clear resulting world‑state → **Achieve** (with `Target Condition`); goals that are just a procedural action with no persistent state to check → **Perform** (only "Indicate Correct Meal" fit this cleanly — everything else either fetches info or changes/maintains world state).
+
+With this reasoning fixed, here is the resulting model.
+
+---
+
+## 2. Goal Tree Overview (for readability)
+
+```
+G1  Hospital Meal & Dish-Collection Service                         [AND, parallel]
+├── G1.1  Deliver Meal Order                                        [AND, seq/parallel]
+│   ├── G1.1.1  Receive Kitchen Request                 (Query)
+│   ├── G1.1.2  Reach Inpatient Room                                [AND, sequential]
+│   │   ├── AT2  Travel to Room
+│   │   └── G1.1.2.2  Open Room Door                     FALLBACK   [AND]
+│   │       ├── AT3  Robot-Assisted Door Opening
+│   │       └── AT4  Human-Assisted Door Opening
+│   ├── G1.1.3  Assess Tray-Retrieval Feasibility  (Query)          [AND, parallel]
+│   │   ├── AT5  Query Inpatient Record
+│   │   └── AT6  Detect Companion Presence
+│   └── G1.1.4  Deliver Food to Inpatient                FALLBACK   [AND]
+│       ├── G1.1.4.1  Tray-Based Delivery                           [AND, sequential]
+│       │   ├── G1.1.4.1.1  Engage Retriever              OR, parallel (race)
+│       │   │   ├── AT7  Signal Inpatient
+│       │   │   ├── AT8  Signal Companion
+│       │   │   ├── AT9  Signal Nurse
+│       │   │   └── AT10 Request Cooperating Robot
+│       │   ├── G1.1.4.1.2  Indicate Correct Meal (Perform)
+│       │   │   └── AT11 Indicate Meal Identity
+│       │   └── G1.1.4.1.3  Monitor & Validate Retrieval            [AND]
+│       │       ├── AT12 Log Retrieval Time/Location
+│       │       ├── AT13 Validate Meal Match
+│       │       └── AT14 Raise Wrong-Meal Alert
+│       └── G1.1.4.2  Table Delivery
+│           └── AT15 Place Meal on Table
+└── G1.2  Retrieve Dirty Dishes                                     [AND, sequential]
+    ├── G1.2.1  Receive Pickup Call  (Query)
+    │   └── AT16 Receive Pickup Call Signal
+    ├── G1.2.2  Reach Room for Pickup               FALLBACK        [AND]
+    │   ├── AT17 Wait for Caller to Open Door
+    │   ├── AT3  Robot-Assisted Door Opening   (reused)
+    │   └── AT4  Human-Assisted Door Opening   (reused)
+    └── G1.2.3  Collect Dishes                       FALLBACK        [AND]
+        ├── AT18 Unassisted Dish Pickup
+        ├── AT19 Two-Robot Dish Pickup
+        └── AT20 Robot+Human Dish Pickup
+```
+
+---
+
+## 3. Goals Table
+
+| Name | Text | Runtime | Goal Type | Relation | Justification |
+|---|---|---|---|---|---|
+| **G1** – Hospital Meal & Dish‑Collection Service | Overall mission: fulfill every kitchen meal‑delivery request and every dish‑pickup call. | `[#]` parallel | Achieve — Target Condition: no kitchen request or pickup call remains unserved | AND | Two independently‑triggered responsibilities ("…in response to kitchen delivery requests" / "dirty dishes should be retrieved") occur concurrently across many rooms; both are mandatory, so AND/parallel, not alternatives. |
+| **G1.1** – Deliver Meal Order | For one kitchen order, get the correct meal to the inpatient via tray‑retrieval or table placement. | `[;]` sequential: `G1.1.1 ; (G1.1.2 # G1.1.3) ; G1.1.4` | Achieve — Target Condition: ordered meal is with the inpatient or on the table, and the event is logged | AND | "Order‑by‑order" trigger must occur first; reaching the room and assessing who can help don't depend on each other, so they're parallelized; delivery itself needs both results, so it's last. |
+| **G1.1.1** – Receive Kitchen Request | Capture the order (meal, inpatient, room) that instantiates this run. | N/A (single task) | Query — QueriedProperty: order data (meal ID, inpatient ID, room, timestamp) | AND | Directly stated: delivery happens "in response to kitchen delivery requests." |
+| **G1.1.2** – Reach Inpatient Room | Travel to the room and gain physical access. | `[;]` sequential | Achieve — Target Condition: robot is inside/at the room with access granted | AND | Travel must finish before access is even relevant; door‑opening is discussed as a distinct cooperative activity in the text. |
+| **G1.1.2.2** – Open Room Door | Gain entry via cooperation with another robot or a human. | `FALLBACK(AT3, AT4)` | Achieve — Target Condition: door open / access granted | AND *(fallback rule)* | "Opening the room door can involve cooperation with another robot or a human" — two alternatives, no autonomous option stated. **Assumption:** robot‑robot tried first (faster, no human interruption), human as fallback. |
+| **G1.1.3** – Assess Tray‑Retrieval Feasibility | Determine, from the patient record and companion presence, who is likely able to retrieve the meal. | `[#]` parallel (`AT5 # AT6`) | Query — QueriedProperty: feasibility of {inpatient, companion, nurse} retrieving the tray, derived from record + presence sensing; **explicitly uncertain** | AND | "…can be obtained based on the inpatient record… and the presence of a companion… This information is subject to uncertainty." Two independent sources, fetchable concurrently; explicit uncertainty → Query with an uncertain property. |
+| **G1.1.4** – Deliver Food to Inpatient | Deliver the meal, preferring tray‑retrieval, guaranteeing completion via table placement. | `FALLBACK(G1.1.4.1, G1.1.4.2)` | Achieve — Target Condition: meal delivered (in‑hand or on table) | AND *(fallback rule)* | The two delivery modes are explicit alternatives; tray‑retrieval depends on *uncertain* human cooperation (G1.1.3) while table delivery is autonomous and always available. FALLBACK operationalizes the stated uncertainty while guaranteeing the order is never left unfulfilled. |
+| **G1.1.4.1** – Tray‑Based Delivery | Have a capable agent retrieve the right meal; track and validate the event. | `[;]` sequential (engage → indicate → monitor/validate) | Achieve — Target Condition: correct meal retrieved by a cooperating agent, logged and validated | AND | Bundles three mandatory, causally ordered obligations named in the text (cooperator, meal indication, tracking/alerting). |
+| **G1.1.4.1.1** – Engage Retriever | Identify and signal a capable retriever: inpatient, companion, nurse, or another robot. | `[#]` parallel (**race**: offer AT7–AT10 concurrently, accept first capable responder) | Achieve — Target Condition: a retriever is engaged/confirmed | **OR** | "Requires cooperation with the inpatient, a companion, a nurse, or another robot," and explicitly "some inpatients could be unable… a companion… or nurse could not be available." Only one candidate needs to succeed (OR); parallel offering is a deliberate choice to avoid delaying delivery (food temperature) with sequential trial‑and‑error — flagged as a judgment call, since the text doesn't mandate strategy. |
+| **G1.1.4.1.2** – Indicate Correct Meal | Signal which of the multiple carried meals belongs to this inpatient. | N/A (single task) | Perform | AND | "The robot can carry multiple meals… should indicate which meal should be retrieved by a given inpatient" — a procedural action, not a state to query/achieve. |
+| **G1.1.4.1.3** – Monitor & Validate Retrieval | Log when/where the meal was taken and confirm it's correct, alerting on mismatch. | `(AT12 # AT13) ; AT14` | Achieve — Target Condition: retrieval logged; meal validated; alert raised iff mismatch | AND | "It should track when and where each meal was retrieved. The robot should alert if a wrong meal is retrieved." Logging/validating can run together as the event is sensed; alert is a conditional consequence of validation. |
+| **G1.1.4.2** – Table Delivery | Autonomously place the meal on the table. | N/A (single task) | Achieve — Target Condition: meal placed on the room table | AND | "The food can be delivered into a room table by the robot (requires a special manipulation robot skill)" — explicit, fully autonomous alternative; this is why it's a safe fallback. |
+| **G1.2** – Retrieve Dirty Dishes | On being called, reach the room and collect dishes at whatever cooperation level is needed. | `[;]` sequential (call ; access ; collect) | Achieve — Target Condition: dirty dishes removed from the room | AND | Mirrors delivery's structure and the text's own staging: a call trigger, room access (door discussed separately), then collection. |
+| **G1.2.1** – Receive Pickup Call | Capture the pickup request and any door‑opening signal from the caller. | N/A (single task) | Query — QueriedProperty: pickup request (room ID) + door‑openable‑by‑caller flag | AND | "Someone in the room can call a robot to pick up the dishes… that person can signal if they can open the door." |
+| **G1.2.2** – Reach Room for Pickup | Travel and gain access, preferring the caller opening the door. | `FALLBACK(AT17, AT3, AT4)` | Achieve — Target Condition: robot granted access to the room | AND *(fallback rule)* | The caller's self‑report (G1.2.1) is free, already‑confirmed information, so it's tried before incurring the coordination cost of the shared robot/human fallback used for delivery — reuses G1.1.2.2's capability with a pickup‑specific option inserted first. |
+| **G1.2.3** – Collect Dishes | Remove dishes, escalating from unassisted to robot‑assisted to human‑assisted. | `FALLBACK(AT18, AT19, AT20)` | Achieve — Target Condition: dirty dishes removed from the room | AND *(fallback rule)* | "…can occur unassisted, with the cooperation of two robots or with the cooperation of robots and a human." No priority is stated; we assume an autonomy‑first order (least coordination/human burden first) — flagged as an assumption, mirroring the door‑opening ordering. |
+
+---
+
+## 4. Tasks Table
+
+| Name | Text | Relation | Location | # of Robots | Justification |
+|---|---|---|---|---|---|
+| **AT1** – Accept Kitchen Order | Receive and parse the kitchen's delivery order. | AND | Hospital – Kitchen/Order Interface | 1 | Implements the "order‑by‑order" kitchen trigger. |
+| **AT2** – Travel to Room | Navigate from current location to the inpatient's room. | AND | Hospital – Corridor | 1 | Physical movement implied by "deliver food from the kitchen to an inpatient room." |
+| **AT3** – Robot‑Assisted Door Opening | Coordinate with a second robot to open/hold the door. | AND *(fallback option, reused by G1.1.2.2 & G1.2.2)* | Hospital – Room Door | 2 | "Opening the room door can involve cooperation with another robot." |
+| **AT4** – Human‑Assisted Door Opening | Request a human (staff/companion) to open/hold the door. | AND *(fallback option, reused)* | Hospital – Room Door | 1 (+1 human) | "…or a human." |
+| **AT5** – Query Inpatient Record | Look up the patient record for tray‑retrieval capability. | AND | Hospital – Patient Records System (virtual) | 1 | "…can be obtained based on the inpatient record." |
+| **AT6** – Detect Companion Presence | Sense whether a companion is currently in the room. | AND | Hospital – Inpatient Room | 1 | "…and the presence of a companion into the room." |
+| **AT7** – Signal Inpatient to Retrieve | Prompt the inpatient to take the meal from the tray. | OR *(race option)* | Hospital – Inpatient Room | 1 | "…cooperation with the inpatient…"; flagged as possibly infeasible ("some inpatients could be unable"). |
+| **AT8** – Signal Companion to Retrieve | Prompt a present companion to take the meal. | OR | Hospital – Inpatient Room | 1 (+1 human) | "…a companion…"; flagged as possibly unavailable. |
+| **AT9** – Signal Nurse to Retrieve | Request a nurse to take the meal for the inpatient. | OR | Hospital – Inpatient Room / Nurse Station | 1 (+1 human) | "…a nurse…"; flagged as possibly unavailable. |
+| **AT10** – Request Cooperating Robot | Call a second robot to assist in meal transfer. | OR | Hospital – Inpatient Room | 2 | "…or another robot" — the fourth stated cooperator. |
+| **AT11** – Indicate Meal Identity | Signal which carried meal belongs to this inpatient. | AND | Hospital – Inpatient Room | 1 | "…indicate which meal should be retrieved by a given inpatient." |
+| **AT12** – Log Retrieval Time/Location | Record timestamp and location of meal pickup. | AND | Hospital – Inpatient Room | 1 | "Track when and where each meal was retrieved." |
+| **AT13** – Validate Meal Match | Confirm the meal taken matches the assignment. | AND | Hospital – Inpatient Room | 1 | Precondition for the alert capability described next. |
+| **AT14** – Raise Wrong‑Meal Alert | Emit an alert when validation finds a mismatch. | AND *(conditional on mismatch)* | Hospital – Inpatient Room | 1 | "The robot should alert if a wrong meal is retrieved." |
+| **AT15** – Place Meal on Table | Use manipulation skill to place meal on the table. | AND | Hospital – Inpatient Room | 1 | "…delivered into a room table by the robot (requires a special manipulation robot skill)." |
+| **AT16** – Receive Pickup Call Signal | Accept the inbound dish‑pickup call and any door‑opening signal. | AND | Hospital – Inpatient Room / Comm. System | 1 | "Someone in the room can call a robot to pick up the dishes…can signal if they can open the door." |
+| **AT17** – Wait for Caller to Open Door | Let the caller open the door per their own signal. | AND *(fallback option, pickup‑only)* | Hospital – Room Door | 1 | Directly enabled by the caller's signal in G1.2.1. |
+| **AT18** – Unassisted Dish Pickup | Collect dishes with no cooperation. | AND *(fallback option)* | Hospital – Inpatient Room | 1 | "…the dish retrieve can occur unassisted…" |
+| **AT19** – Two‑Robot Dish Pickup | Jointly collect dishes with a second robot. | AND *(fallback option)* | Hospital – Inpatient Room | 2 | "…with the cooperation of two robots…" |
+| **AT20** – Robot+Human Dish Pickup | Collect dishes with human assistance. | AND *(fallback option)* | Hospital – Inpatient Room | 1 (+1 human) | "…or with the cooperation of robots and a human." |
+
+---
+
+## 5. Summary Table (Goals + Tasks)
+
+| ID | Type | Title |
+|---|---|---|
+| G1 | Goal | Hospital Meal & Dish‑Collection Service |
+| G1.1 | Goal | Deliver Meal Order |
+| G1.1.1 | Goal | Receive Kitchen Request |
+| G1.1.2 | Goal | Reach Inpatient Room |
+| G1.1.2.2 | Goal | Open Room Door |
+| G1.1.3 | Goal | Assess Tray‑Retrieval Feasibility |
+| G1.1.4 | Goal | Deliver Food to Inpatient |
+| G1.1.4.1 | Goal | Tray‑Based Delivery |
+| G1.1.4.1.1 | Goal | Engage Retriever |
+| G1.1.4.1.2 | Goal | Indicate Correct Meal |
+| G1.1.4.1.3 | Goal | Monitor & Validate Retrieval |
+| G1.1.4.2 | Goal | Table Delivery |
+| G1.2 | Goal | Retrieve Dirty Dishes |
+| G1.2.1 | Goal | Receive Pickup Call |
+| G1.2.2 | Goal | Reach Room for Pickup |
+| G1.2.3 | Goal | Collect Dishes |
+| AT1 | Task | Accept Kitchen Order |
+| AT2 | Task | Travel to Room |
+| AT3 | Task | Robot‑Assisted Door Opening |
+| AT4 | Task | Human‑Assisted Door Opening |
+| AT5 | Task | Query Inpatient Record |
+| AT6 | Task | Detect Companion Presence |
+| AT7 | Task | Signal Inpatient to Retrieve |
+| AT8 | Task | Signal Companion to Retrieve |
+| AT9 | Task | Signal Nurse to Retrieve |
+| AT10 | Task | Request Cooperating Robot |
+| AT11 | Task | Indicate Meal Identity |
+| AT12 | Task | Log Retrieval Time/Location |
+| AT13 | Task | Validate Meal Match |
+| AT14 | Task | Raise Wrong‑Meal Alert |
+| AT15 | Task | Place Meal on Table |
+| AT16 | Task | Receive Pickup Call Signal |
+| AT17 | Task | Wait for Caller to Open Door |
+| AT18 | Task | Unassisted Dish Pickup |
+| AT19 | Task | Two‑Robot Dish Pickup |
+| AT20 | Task | Robot+Human Dish Pickup |
+
+---
+
+## 6. Logical Relationships
+
+- **G1 → G1.1, G1.2 [AND] (parallel)**
+  - *Justification*: Delivery and dish‑retrieval are triggered by different events (kitchen request vs. room call) and run concurrently across rooms; neither can substitute for the other.
+
+- **G1.1 → G1.1.1, G1.1.2, G1.1.3, G1.1.4 [AND] ([;] sequential, with G1.1.2 # G1.1.3 in parallel)**
+  - *Justification*: The order must arrive first; travel and feasibility‑assessment are independent of each other and can overlap; delivery needs both finished.
+
+- **G1.1.1 → AT1 [AND]**
+  - *Justification*: Single information‑capture task implementing the order trigger.
+
+- **G1.1.2 → AT2, G1.1.2.2 [AND] ([;] sequential)**
+  - *Justification*: Must arrive before door access is relevant.
+
+- **G1.1.2.2 → AT3, AT4 [AND] FALLBACK(AT3, AT4)**
+  - *Justification*: Explicit alternative cooperators for door‑opening; robot‑robot assumed first for speed, human as fallback.
+
+- **G1.1.3 → AT5, AT6 [AND] (parallel)**
+  - *Justification*: Two independent, concurrently‑fetchable information sources feeding one uncertain feasibility estimate.
+
+- **G1.1.4 → G1.1.4.1, G1.1.4.2 [AND] FALLBACK(G1.1.4.1, G1.1.4.2)**
+  - *Justification*: Mutually exclusive delivery mechanisms where the preferred one (tray) is explicitly uncertain; table delivery is the autonomous guarantee.
+
+- **G1.1.4.1 → G1.1.4.1.1, G1.1.4.1.2, G1.1.4.1.3 [AND] ([;] sequential)**
+  - *Justification*: Must engage a retriever, tell them which meal, then monitor the act — in this causal order.
+
+- **G1.1.4.1.1 → AT7, AT8, AT9, AT10 [OR] ([#] parallel — race)**
+  - *Justification*: Any one capable cooperator suffices; offering them concurrently avoids delivery delay given explicitly stated unreliability of each individual candidate.
+
+- **G1.1.4.1.2 → AT11 [AND]**
+  - *Justification*: Single, direct procedural task.
+
+- **G1.1.4.1.3 → AT12, AT13, AT14 [AND] ((AT12 # AT13) ; AT14)**
+  - *Justification*: Logging and validating can run together on the sensed event; alerting is conditionally sequential on validation's result.
+
+- **G1.1.4.2 → AT15 [AND]**
+  - *Justification*: Single autonomous manipulation task.
+
+- **G1.2 → G1.2.1, G1.2.2, G1.2.3 [AND] ([;] sequential)**
+  - *Justification*: Call must be received before access is attempted, which must precede collection.
+
+- **G1.2.1 → AT16 [AND]**
+  - *Justification*: Single information‑capture task.
+
+- **G1.2.2 → AT17, AT3, AT4 [AND] FALLBACK(AT17, AT3, AT4)**
+  - *Justification*: The caller's self‑reported ability to open the door is a free, already‑known option, tried before re‑using the general‑purpose robot/human door‑cooperation fallback shared with delivery.
+
+- **G1.2.3 → AT18, AT19, AT20 [AND] FALLBACK(AT18, AT19, AT20)**
+  - *Justification*: Explicit alternative collection modes, ordered here from least to most coordination‑/human‑intensive (an assumption, since no priority is stated in the text).
+
+---
+
+## 7. Key Assumptions & Design Notes (for traceability)
+
+1. **FALLBACK vs. OR+parallel** — I used FALLBACK (AND) wherever alternatives are mutually exclusive and one is a clear "safety net" for the other (tray‑vs‑table delivery; door‑opening; dish‑pickup modes). I used **true OR with parallel execution** only for *Engage Retriever*, because the explicit mention of individual‑candidate unreliability plus the time‑sensitivity of food delivery favors a concurrent "race" over a slow sequential trial‑and‑error. This is the one place I deliberately diverged from a pure sequential pattern — flagged for discussion with domain stakeholders.
+2. **Ordering assumptions** without explicit textual priority (robot‑before‑human for doors; autonomy‑before‑cooperation for dish pickup) are reasonable engineering defaults, not requirements — they should be validated against actual hospital workflow/staff‑burden policies.
+3. **Shared sub‑capability**: "Open Room Door" (G1.1.2.2 / AT3, AT4) is reused verbatim inside the pickup flow (G1.2.2), which simply adds a cheaper, call‑specific first option (AT17) ahead of it — reflecting that the description treats door‑opening as one general capability referenced in two contexts.
+4. **Uncertainty handling** is the structural centerpiece of the model: it surfaces as (a) an explicit uncertain `QueriedProperty` in G1.1.3, and (b) a guaranteed‑completion FALLBACK in G1.1.4, so the system never fails an order even when the uncertain prediction about human/companion/nurse availability turns out to be wrong.
+5. **Scope limitation**: the text only describes a *call‑initiated* trigger for dish pickup; I did not invent a proactive/scheduled pickup goal since nothing in the description supports it.

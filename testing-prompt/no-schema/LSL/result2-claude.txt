@@ -1,0 +1,198 @@
+# Mission Analysis: Lab Sample Transport System (Multi-Robot System)
+
+Before building the tables, let me work through the mission description carefully, the way a mission designer would — identifying actors, phases, cross-cutting concerns, and ambiguities that need an explicit design decision.
+
+---
+
+## 1. Step-by-Step Reasoning
+
+### Step 1 — Identify the actors/agents in the narrative
+Reading the text closely, I can list every agent that *does* something:
+
+| Agent | Type | Role in the mission |
+|---|---|---|
+| Nurse | Human | Identifies sample, enters data, requests delivery |
+| Track System | Software agent | Stores sample data, logs, monitors time |
+| Transport Robot (implied) | Robot (mobile) | Physically carries the sample in a **locked drawer** from floor to lab — the text never names it, but "samples are transported in secure locked drawers" and the need to move between floors and the lab implies a mobile agent carrying the drawer. This is a necessary inference for a *multi-robot* reading of the text. |
+| Robotic Arm | Robot (stationary, in lab) | Picks, scans, sorts, loads samples into analysis machines |
+| Laboratory Personnel | Human | Alternative to the robotic arm |
+| Analysis Machine | Passive equipment | Receives the sample (entry-module) — not an actor, just a target/interface |
+
+**Reflection:** This confirms the "multi-robot" nature of the mission — there are at least **two distinct robot types** with different mobility, locations, and roles (mobile transport robot vs. stationary robotic arm). Treating them as the same actor would be a modeling mistake, so I keep them as separate goal/task owners.
+
+### Step 2 — Segment the narrative into functional phases vs. cross-cutting concerns
+Not every sentence describes a *sequential step*. Some describe **constraints that hold throughout** the mission. I classified each sentence:
+
+- **Sequential/functional** (things that happen in order): barcode → data entry → request → load into drawer → travel → pick-up at lab → (scan → sort → load) OR (manual handling).
+- **Cross-cutting (non-functional, continuous)**: "only authorized... should be able to open the locked drawers" (security, applies at *every* drawer-opening event, not just once); "information... should be logged securely" (logging applies at every pick-up event); "time... should be tracked" (a continuous measurement spanning the whole mission).
+
+**Reflection:** If I had modeled security and monitoring as just another sequential step buried inside "transport," I would lose traceability — a reviewer wouldn't be able to see that access control governs *two* separate events (loading at the floor, and opening at the lab). So I promoted **Access Control** and **Monitoring** to top-level goals that run in **parallel** with the functional chain. This is standard practice in goal-oriented requirements engineering: separate functional goals from quality/security goals so they can be traced and verified independently.
+
+### Step 3 — Decide Goal Types (Achieve / Perform / Query)
+- Goals with a clear, checkable end-state → **Achieve** (e.g., "sample is in the lab," "drawer is locked").
+- Goals that are really "execute this known procedure" (explicitly scripted by the text, e.g. "picks up... scans... sorts... loads") → **Perform**.
+- A goal whose entire purpose is to obtain/verify a piece of information → **Query** (e.g., checking elapsed time against protocol).
+
+### Step 4 — Resolve the OR vs. FALLBACK decision (most important design judgment call)
+The text says: *"the sample can be picked by a robotic arm **or** laboratory personnel."* Literally this is an OR. However:
+- The rest of the paragraph only elaborates the **robotic arm's** procedure in detail (scan, sort, load into analysis machine) — suggesting the robotic arm is the **primary/preferred** path, since it's the automated, more specified pipeline.
+- In MRS mission design, when two execution strategies exist for the same goal and one is clearly the "automation-first" path, it is good practice to encode it as **FALLBACK(primary, secondary)** rather than a free OR, so the system knows to *attempt* automation first and *only* resort to the human path if the robot is unavailable/faulty/busy. This also gives the mission model resilience semantics it wouldn't have as a plain OR.
+- The instructions explicitly state "FALLBACK must have an AND relation," which matches this framework's convention (both branches are legitimate parts of the plan; only the *trigger condition* differs, not the formal AND/OR split).
+
+**Decision:** Model lab reception as `FALLBACK(Robotic Arm Handling, Manual Handling)` with an AND relation. I flag this clearly as a design interpretation, not a literal requirement.
+
+### Step 5 — Reorder narrative into logical/temporal order
+The text mentions "nurse can request a delivery" *before* mentioning the barcode and data entry — but logically, a sample must be **identified (barcode) → registered (data entry) → requested** in that causal order (you cannot register or request transport of a sample that hasn't been collected/identified yet). I reordered these into their logical execution sequence and justified it explicitly rather than following sentence order blindly.
+
+### Step 6 — Explicit Assumptions (stated for traceability)
+1. A **mobile transport robot** (not explicitly named in the text) is the agent that carries the locked drawer between floor and lab — inferred from "transported in secure locked drawers" + the need for floor↔lab mobility.
+2. The authorization check ("only authorized personnel or specific robots in specific locations") applies at **two distinct points**: when the drawer is loaded/closed at the patient floor, and when it is opened at the laboratory — both are modeled.
+3. "Information about where and when a sample was picked" is interpreted to cover **both** pick-up events (floor collection and lab retrieval), since "picked" is the same verb used generically in the text.
+4. Robotic-arm-vs-personnel is modeled as **FALLBACK**, not plain OR (see Step 4).
+5. The "time between sample collection and laboratory delivery" clock is treated as spanning the Preparation→Transport→Reception chain, which is why the Monitoring goal runs in parallel with that whole chain rather than with a single phase.
+
+---
+
+## 2. Goal Tree Overview (informal diagram)
+
+```
+G1  Transport Lab Sample from Patient Floor to Laboratory [Achieve]
+ ├─ G2  Sample Preparation & Delivery Request [Achieve]           ─┐
+ │   ├─ AT1 Attach Barcode to Sample                               │
+ │   ├─ AT2 Record Sample Data in Track System                     │ sequential
+ │   └─ AT3 Submit Delivery Request                                │
+ ├─ G3  Secure Physical Transport to Laboratory [Achieve]           │ chain
+ │   ├─ AT4 Load Sample into Locked Drawer                          │ (G2;G3;G4)
+ │   └─ AT5 Navigate Patient Floor → Laboratory                     │
+ ├─ G4  Laboratory Sample Reception & Processing [Achieve]         ─┘
+ │   ├─ G4.1 Robotic Arm Sample Handling [Perform]   ─┐ FALLBACK
+ │   │   ├─ AT6 Pick Up Sample                         │
+ │   │   ├─ AT7 Scan Barcode                           │ sequential
+ │   │   ├─ AT8 Sort Sample                            │
+ │   │   └─ AT9 Load into Analysis Machine Entry-Module│
+ │   └─ G4.2 Manual Handling by Lab Personnel [Perform]─┘
+ │       └─ AT10 Manually Retrieve & Process Sample
+ ├─ G5  Chain-of-Custody Monitoring [Achieve]   (‖ parallel to G2-G4)
+ │   ├─ G5.1 Secure Pick-up Logging [Achieve]     ─┐ parallel
+ │   │   └─ AT11 Record Pick-up Location/Time      │
+ │   └─ G5.2 Protocol Time Compliance [Query]      ─┘
+ │       └─ AT12 Measure & Compare Elapsed Time
+ └─ G6  Drawer Access Control Enforcement [Achieve]  (‖ parallel to G2-G4)
+     ├─ AT13 Verify Authorization – Pickup Point   ─┐ sequential
+     └─ AT14 Verify Authorization – Laboratory Point┘
+```
+
+> **Legend:** `;` = sequential, `#` = parallel, `FALLBACK(a,b)` = try *a*, fall back to *b*.
+> **Note on table columns:** For each Goal, *Runtime* and *Relation* describe how **that goal's own children** are combined/executed. For Tasks, *Relation* describes how that task relates to its **sibling tasks** under the same parent goal.
+
+---
+
+## 3. Goals Table
+
+| Name | Text | Runtime | Goal Type | Relation | Justification |
+|---|---|---|---|---|---|
+| **G1 – Deliver Lab Sample** | Transport a lab sample from the patient floor to the laboratory, processed and logged according to protocol. | `(G2 ; G3 ; G4) # G5 # G6` | **Achieve** — Target Condition: Sample delivered, processed, custody logged, transit time within protocol. | AND | This is the mission statement itself ("Lab samples should be transported from patient floors to the laboratory"). All sub-goals are mandatory for mission success, so AND; the functional chain is sequential but security/monitoring are continuous, so they run in parallel (`#`) with it. |
+| **G2 – Sample Preparation & Request** | Identify the sample with a barcode, register its data, and request a delivery. | `AT1 ; AT2 ; AT3` | **Achieve** — Target Condition: sample is barcoded, registered in track system, and a delivery request exists. | AND | Directly covers: "Each sample before collection is identified with a barcode," "The nurse inserts data... in a track system," and "...can request a delivery." All three must occur before transport can start. |
+| **G3 – Secure Physical Transport** | Place the sample in a locked drawer and move it from the patient floor to the laboratory. | `AT4 ; AT5` | **Achieve** — Target Condition: sample is in a locked drawer and physically located at the lab. | AND | Directly covers "Samples are transported in secure locked drawers" and the implicit floor→lab movement. Loading must precede travel, hence sequential. |
+| **G4 – Laboratory Reception & Processing** | Retrieve the sample from the drawer and process it, either via robotic arm or lab personnel. | `FALLBACK(G4.1, G4.2)` | **Achieve** — Target Condition: sample removed from drawer and either loaded into the analysis machine or handed to personnel. | AND (fallback structure) | Covers "the sample can be picked by a robotic arm or laboratory personnel." Modeled as FALLBACK (robot-first, human as backup) rather than free OR — see Step 4 reasoning — because the robotic path is the one the text elaborates fully (scan/sort/load), implying it is the preferred/automated route, with personnel as a resilience backup. |
+| **G4.1 – Robotic Arm Sample Handling** | The robotic arm picks, scans, sorts, and loads the sample into the analysis machine. | `AT6 ; AT7 ; AT8 ; AT9` | **Perform** (procedural goal — success is defined by correctly executing the scripted sequence, not a single abstract state). | AND | Mirrors verbatim: "The robotic arm picks up samples, scans the barcode in each sample, sorts, and loads the samples into the entry-module." Order is explicit in the text, hence sequential. |
+| **G4.2 – Manual Handling by Lab Personnel** | Laboratory personnel retrieve and process the sample manually. | N/A (single task) | **Perform** | AND | Fallback branch explicitly allowed by "...or laboratory personnel." |
+| **G5 – Chain-of-Custody Monitoring** | Ensure every pick-up is logged securely and transit time meets protocol. | `G5.1 # G5.2` | **Achieve** — Target Condition: pick-up events logged securely AND elapsed time verified against protocol. | AND | Groups two explicit NFRs: "Information about where and when a given sample was picked should be logged securely" and "The time between sample collection and laboratory delivery should be tracked." They are independent, concurrent concerns, hence parallel. |
+| **G5.1 – Secure Pick-up Logging** | Log the location and time of every pick-up event in a tamper-resistant manner. | N/A (single task) | **Achieve** — Target Condition: pick-up location/timestamp stored securely for each pick-up event. | AND | "...should be logged **securely**" — the word "securely" is a quality constraint, which is why this is kept as its own Achieve goal rather than folded into a task elsewhere. |
+| **G5.2 – Protocol Time Compliance Tracking** | Continuously check elapsed time between collection and delivery against the lab protocol threshold. | N/A (single task) | **Query** — QueriedProperty: elapsed time between sample collection and laboratory delivery vs. protocol's maximum allowed duration. | AND | "...tracked to be sure that it goes according to laboratory protocols" is an information/verification goal, not a physical action — ideal fit for **Query** type. |
+| **G6 – Drawer Access Control Enforcement** | Only let authorized personnel or authorized robots (in authorized locations) unlock the drawer. | `AT13 ; AT14` | **Achieve** — Target Condition: drawer unlocks only for verified authorized personnel/robot-at-location; all other attempts denied. | AND | Direct from: "Only authorized personnel or specific robots in specific locations should be able to open the locked drawers." Kept as a top-level, parallel goal because it governs *two* distinct events (loading at the floor, opening at the lab), not one single step. |
+
+---
+
+## 4. Tasks Table
+
+| Name | Text | Relation | Location | Number of Robots | Justification |
+|---|---|---|---|---|---|
+| **AT1 – Attach Barcode** | Nurse attaches a barcode to the sample before collection. | AND | Hospital – Patient Floor | 0 (human: nurse) | "Each sample before collection is identified with a barcode." |
+| **AT2 – Record Sample Data** | Nurse inserts sample data into the track system. | AND | Hospital – Patient Floor | 0 (human: nurse) | "The nurse inserts data about the sample in a track system." |
+| **AT3 – Submit Delivery Request** | Nurse requests a delivery of the sample to the laboratory. | AND | Hospital – Patient Floor | 0 (human: nurse) | "A nurse... can request a delivery to the laboratory." |
+| **AT4 – Load Sample into Locked Drawer** | Sample is placed into the transport robot's secure drawer, which is then locked. | AND | Hospital – Patient Floor | 1 (mobile transport robot) | "Samples are transported in secure locked drawers" — requires a carrying agent, inferred as the mobile transport robot (see Assumption 1). |
+| **AT5 – Navigate to Laboratory** | Transport robot moves from the patient floor to the laboratory with the locked drawer. | AND | Hospital – Transit (corridors/elevators, floor→lab) | 1 (mobile transport robot) | Implied by the mission's core requirement to move the sample "from patient floors to the laboratory." |
+| **AT6 – Pick Up Sample** | Robotic arm removes the sample from the drawer. | AND | Hospital – Laboratory | 1 (robotic arm) | "The robotic arm picks up samples..." |
+| **AT7 – Scan Sample Barcode** | Robotic arm scans the barcode of each sample. | AND | Hospital – Laboratory | 1 (robotic arm) | "...scans the barcode in each sample..." |
+| **AT8 – Sort Sample** | Robotic arm sorts the sample. | AND | Hospital – Laboratory | 1 (robotic arm) | "...sorts..." |
+| **AT9 – Load into Analysis Machine** | Robotic arm loads the sample into the analysis machine's entry-module. | AND | Hospital – Laboratory | 1 (robotic arm) | "...and loads the samples into the entry-module of the analysis machines." |
+| **AT10 – Manual Retrieve & Process** | Lab personnel retrieve the sample from the drawer and process it manually (fallback path). | AND | Hospital – Laboratory | 0 (human: lab personnel) | "...or laboratory personnel" — alternative branch to AT6–AT9. |
+| **AT11 – Record Pick-up Location & Timestamp** | Track system securely logs where and when the sample was picked up (at floor and/or lab). | AND | Hospital – Patient Floor & Laboratory (network-wide via track system) | 0 (software: track system) | "Information about where and when a given sample was picked should be logged securely." |
+| **AT12 – Measure & Compare Elapsed Time** | Track system computes elapsed time from collection to delivery and compares it to the protocol threshold. | AND | Hospital – track system (backend, hospital-wide) | 0 (software: track system) | "The time between sample collection and laboratory delivery should be tracked... according to laboratory protocols." |
+| **AT13 – Verify Authorization (Pickup Point)** | Checks that the entity requesting to open/close the drawer at the floor is authorized. | AND | Hospital – Patient Floor | 1 (transport robot's lock/authentication module) | "Only authorized personnel or specific robots in specific locations should be able to open the locked drawers" — applied at the loading point. |
+| **AT14 – Verify Authorization (Laboratory Point)** | Checks that the entity requesting to open the drawer at the lab is authorized. | AND | Hospital – Laboratory | 1 (transport robot's lock module / lab-side reader) | Same requirement applied at the unloading point — two distinct checkpoints, same rule. |
+
+---
+
+## 5. Summary Table (Goals + Tasks)
+
+| ID | Name | Element Type | Parent | Short Description |
+|---|---|---|---|---|
+| G1 | Deliver Lab Sample | Goal (Mission) | — | Transport sample from floor to lab, processed & logged per protocol |
+| G2 | Sample Preparation & Request | Goal | G1 | Identify, register, and request transport of the sample |
+| AT1 | Attach Barcode | Task | G2 | Nurse barcodes the sample |
+| AT2 | Record Sample Data | Task | G2 | Nurse logs sample data in track system |
+| AT3 | Submit Delivery Request | Task | G2 | Nurse requests delivery |
+| G3 | Secure Physical Transport | Goal | G1 | Lock sample in drawer and move it to the lab |
+| AT4 | Load Sample into Locked Drawer | Task | G3 | Secure sample in transport robot's drawer |
+| AT5 | Navigate to Laboratory | Task | G3 | Transport robot travels floor → lab |
+| G4 | Laboratory Reception & Processing | Goal | G1 | Retrieve & process sample at the lab |
+| G4.1 | Robotic Arm Sample Handling | Goal | G4 | Automated pick/scan/sort/load pipeline |
+| AT6 | Pick Up Sample | Task | G4.1 | Arm removes sample from drawer |
+| AT7 | Scan Sample Barcode | Task | G4.1 | Arm scans barcode |
+| AT8 | Sort Sample | Task | G4.1 | Arm sorts sample |
+| AT9 | Load into Analysis Machine | Task | G4.1 | Arm loads sample into entry-module |
+| G4.2 | Manual Handling by Lab Personnel | Goal | G4 | Fallback human-performed handling |
+| AT10 | Manual Retrieve & Process | Task | G4.2 | Personnel handle sample manually |
+| G5 | Chain-of-Custody Monitoring | Goal | G1 | Log pick-ups and track protocol timing |
+| G5.1 | Secure Pick-up Logging | Goal | G5 | Securely log pick-up location/time |
+| AT11 | Record Pick-up Location & Timestamp | Task | G5.1 | Log event data securely |
+| G5.2 | Protocol Time Compliance Tracking | Goal | G5 | Verify elapsed time vs. protocol |
+| AT12 | Measure & Compare Elapsed Time | Task | G5.2 | Compute and check timing compliance |
+| G6 | Drawer Access Control Enforcement | Goal | G1 | Restrict drawer opening to authorized entities |
+| AT13 | Verify Authorization – Pickup Point | Task | G6 | Auth check at the floor |
+| AT14 | Verify Authorization – Laboratory Point | Task | G6 | Auth check at the lab |
+
+---
+
+## 6. Logical Relationships
+
+- **G1 -> G2, G3, G4, G5, G6 [AND][(G2 ; G3 ; G4) # G5 # G6]**
+  - **Justification**: All five sub-goals are necessary for a successful delivery (AND). The functional pipeline (prepare → transport → process) is inherently sequential because each phase depends physically on the previous one finishing. Monitoring (G5) and access control (G6) are not discrete steps — they are continuous constraints that must hold *throughout* the functional pipeline, so they run in parallel (`#`) with it rather than before/after it.
+
+- **G2 -> AT1, AT2, AT3 [AND][(sequential)]**
+  - **Justification**: A sample must be physically identifiable (barcode) before its data can be meaningfully registered, and it must be registered before a delivery request referencing it makes sense. I reordered this from the text's sentence order into this causally necessary order (see Step 5 of my reasoning).
+
+- **G3 -> AT4, AT5 [AND][(sequential)]**
+  - **Justification**: The sample cannot be transported before it is secured in the drawer; "secure locked drawers" is the explicit transport mechanism named in the text.
+
+- **G4 -> G4.1, G4.2 [AND][FALLBACK(G4.1, G4.2)]**
+  - **Justification**: The text presents these as alternatives ("picked by a robotic arm **or** laboratory personnel"). I chose FALLBACK over a plain OR because the robotic-arm path is clearly the system's primary/automated pipeline (it's the only one elaborated with detailed steps), and modeling it as a fallback gives the mission designer explicit resilience semantics (robot unavailable/busy/failed → human takes over) rather than an unordered free choice. As instructed, FALLBACK is encoded with an AND relation.
+
+- **G4.1 -> AT6, AT7, AT8, AT9 [AND][(sequential)]**
+  - **Justification**: The text lists these actions in a fixed order — "picks up... scans... sorts... loads" — so the sequential operator directly mirrors the narrative.
+
+- **G4.2 -> AT10 [AND]**
+  - **Justification**: Single-child decomposition; trivial AND, no ordering needed.
+
+- **G5 -> G5.1, G5.2 [AND][(parallel)]**
+  - **Justification**: Logging a pick-up event and tracking elapsed transit time are independent monitoring functions that can and should run concurrently without one blocking the other.
+
+- **G5.1 -> AT11 [AND]**
+  - **Justification**: Single-task decomposition of the secure-logging requirement.
+
+- **G5.2 -> AT12 [AND]**
+  - **Justification**: Single-task decomposition of the time-tracking requirement.
+
+- **G6 -> AT13, AT14 [AND][(sequential)]**
+  - **Justification**: The same authorization rule applies at two physically and temporally distinct checkpoints — loading at the patient floor, then opening at the laboratory — which occur one after the other in the mission timeline, hence sequential rather than parallel.
+
+---
+
+## 7. Further Reflections / Design Notes
+
+- **Multi-robot distinction matters**: The model deliberately keeps the *mobile transport robot* (AT4, AT5, AT13, AT14) separate from the *stationary robotic arm* (AT6–AT9), since they differ in mobility, location, and failure modes — collapsing them would hide a key MRS coordination point (handoff of the sample at the lab).
+- **Security and monitoring as parallel, cross-cutting goals (G5, G6)** rather than inline steps is a deliberate traceability choice: it lets a reviewer audit "is access control enforced everywhere it needs to be?" and "is logging complete?" independently of the functional flow.
+- **Open question for the mission owner**: should G4's FALLBACK trigger condition be "robotic arm unavailable/faulty" or should it instead be a true free-choice OR (e.g., load-balancing between arm and personnel during high volume)? I resolved this in favor of FALLBACK based on the text's emphasis on the arm's detailed procedure, but this is the single most interpretive decision in this model and worth confirming with stakeholders.
+- **Not modeled explicitly** (outside the given text, flagged rather than invented): what happens if the robotic arm fails *mid*-sequence (e.g., after scanning but before sorting) — a full MRS specification would likely want recovery/retry goals here, but nothing in the description calls for it, so I did not add it to avoid overreach.
