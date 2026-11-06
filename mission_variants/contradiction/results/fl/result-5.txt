@@ -1,0 +1,166 @@
+# Mission Analysis: Hospital Meal Delivery & Dish Collection
+
+## Step-by-Step Reasoning
+
+**1. Identifying the top-level responsibilities.** The description contains two largely independent robot missions: (a) delivering food order-by-order in response to kitchen requests, and (b) retrieving dirty dishes in response to room calls. Nothing in the text forces one to happen before/after the other (they are triggered by different, independent events), so I modeled a root goal that **AND**-decomposes into these two, with a **parallel** runtime (no obligation of order, but they may run concurrently across different orders/rooms).
+
+**2. Pruning zero-robot elements.** The "kitchen delivery request" and the "call to pick up dishes" are actions performed by humans/the kitchen system, not by a robot. Per the zero-robot rule, I did **not** create goals/tasks for these — they are treated only as *triggers/context* for G2 and G12 respectively, not nodes in the tree.
+
+**3. Delivery method (table vs. tray).** This is explicitly presented as two alternative mechanisms ("...can be delivered... **or**... can be fetched..."), with no stated condition of the form "if X fails, then Y." So this is a plain **OR**, not a FALLBACK. I used parallel runtime (no obligatory order between alternatives).
+
+**4. Determining *who* retrieves from the tray — this is where I applied FALLBACK carefully.** The text gives an explicit *triggering condition* for needing an alternative cooperator: *"Some inpatients could be unable... a companion visitor or nurse could not be available."* This is exactly the "normal behavior → alternative behavior triggered by a condition" pattern the instructions define as FALLBACK. Since FALLBACK requires an AND-decomposition (not OR), I modeled:
+ `FALLBACK(FALLBACK(Inpatient, Companion), Nurse)` — attempt the inpatient, then companion, then nurse — and a second-level fallback to robot–robot cooperation if no human option works: `FALLBACK(HumanAssisted, RobotCooperation)`.
+I did **not** apply this reasoning to the table-vs-tray choice or the three dish-collection modes, because no equivalent inability/unavailability condition is stated for those — they remain plain OR.
+
+**5. Door opening.** *"That person can signal if they can open the door when the robot comes to it"* is an explicit conditional (if-they-can / if-they-cannot), so this is also modeled as `FALLBACK(HumanOpens, RobotCooperationOpens)` → AND-decomposition.
+
+**6. Multiple meals / indication / tracking.** Carrying multiple meals requires indicating the correct one *before* a human retrieves it (sequential, logical necessity). Tracking "when and where retrieved" is modeled as a separate Achieve goal under food delivery, occurring *after* the retrieval event (sequential).
+
+**7. ⚠️ Flagged contradiction.** The text states: *"The robot should alert if a wrong meal is retrieved. However, if the wrong meal is retrieved, the robot must not generate an alert."* This is a direct logical contradiction (same condition, opposite required behavior) — it cannot both generate and not generate the alert. I did **not** silently resolve it. I modeled the detection task (uncontroversial) and a separate alert-generation task, but flagged the alert task's requirement as **unresolved/contradictory** and recommend this be clarified with stakeholders before implementation. I did not invent an assumption to "fix" it quietly.
+
+**8. ⚠️ Flagged ambiguities (locations/robot counts).**
+- The *check of the inpatient record* has no explicit location in the text. I bound it to "Inpatient room" because it is only ever discussed as part of the in-room delivery assessment (paired with detecting companion presence "into the room") — I avoided inventing a new, unstated location (e.g., "database server," "kitchen").
+- *"cooperation of robots and a human"* for dish collection uses plural "robots" ambiguously (could mean exactly one robot, generically referenced, or more than one). I modeled this as a range **[1,2]** rather than guessing a single number.
+
+---
+
+## Goal Table
+
+| Name | Text | Runtime | Goal Type | Relation (own decomposition) | Justification |
+|---|---|---|---|---|---|
+| **G1** – Provide Meal Delivery & Dish Collection Service | Provide the hospital's inpatient meal delivery and dirty-dish collection service, fulfilling kitchen delivery requests and room pick-up calls. | G2#G12 | **Achieve** – Target: all open kitchen requests have resulted in delivered/retrievable meals, and all room calls have resulted in dishes retrieved. | AND | Both responsibilities (food delivery, dish retrieval) are described as required system capabilities, not alternatives — AND. No explicit order between them, and they're triggered independently → parallel. |
+| **G2** – Deliver Food to Inpatient Room | Deliver an ordered meal from the kitchen to the correct inpatient, in response to a kitchen delivery request. | G3;G11 | **Achieve** – Target: the meal is delivered/made available to the correct inpatient and its retrieval is logged. | AND | Selecting/performing a delivery method AND tracking the retrieval are both required. Tracking "when/where retrieved" presupposes the retrieval already happened → sequential. |
+| **G3** – Select and Perform Delivery Method | Deliver the meal either onto the room table or via the robot's tray. | AT1#G4 | **Achieve** – Target: the meal reaches the inpatient by one of the two valid methods. | OR | Text presents these as two alternative mechanisms ("...or..."), with no condition dictating which is tried first — plain OR, no fixed order. |
+| **G4** – Fetch Meal from Robot Tray | Make the meal available to, and retrieved from, the robot's tray by an appropriate cooperating agent. | G5;G6 | **Achieve** – Target: the meal has been removed from the tray by an appropriate agent. | AND | Must know who is capable before attempting retrieval — logical precedence → sequential, AND (both steps required). |
+| **G5** – Determine Capable Retrieving Agent | Determine, from the inpatient record and detected companion/nurse presence, who can retrieve the meal from the tray. | AT2#AT3 | **Query** – QueriedProperty: capability of inpatient/companion/nurse to retrieve the meal (subject to uncertainty, per the text). | AND | Both the patient-record check and the presence detection are explicitly required together ("according to information about the patient **and** the presence of a companion"); no order stated between them → parallel. |
+| **G6** – Execute Tray Retrieval with Monitoring | Carry out the tray-based retrieval and monitor whether the correct meal was taken. | G7;G10 | **Achieve** – Target: a meal has been retrieved from the tray and its correctness verified. | AND | Monitoring/verifying correctness logically happens after the retrieval act → sequential, AND (both required). |
+| **G7** – Execute Retrieval Cooperation | Retrieve the meal from the tray, preferring human assistance, falling back to another robot if no human can help. | FALLBACK(G8, AT8) | **Achieve** – Target: the meal is removed from the tray via a successful cooperation. | AND | FALLBACK is used because the text explicitly states the triggering condition for needing the alternative (humans may be unable/unavailable); FALLBACK pairs are always AND per the spec. |
+| **G8** – Human-Assisted Retrieval | Indicate the correct meal, then have a human retrieve it from the tray. | AT4;G9 | **Achieve** – Target: the correctly indicated meal is taken by a human. | AND | Indicating which meal must precede retrieval ("the robot should indicate which meal should be retrieved") → sequential, AND. |
+| **G9** – Human Retrieves Meal from Tray | Have the inpatient retrieve the meal if able; otherwise the companion; otherwise the nurse. | FALLBACK(FALLBACK(AT5,AT6),AT7) | **Achieve** – Target: the meal has been taken from the tray by inpatient, companion, or nurse. | AND | Explicit conditions given ("inpatient could be unable," "companion/nurse could not be available") define an alternative-on-failure chain → FALLBACK, hence AND. |
+| **G10** – Monitor for Wrong Meal Retrieval | Check whether the retrieved meal matches the one assigned, and alert accordingly. | AT9;AT10 | **Perform** ⚠️ | AND | This is action-centric (execute a check, then execute an alert action) rather than pursuing a persisting target state, fitting the Perform definition. **Note:** the mission text contradicts itself on whether the alert should fire — see flag above; modeled per the first (general) statement, pending clarification. |
+| **G11** – Track Meal Retrieval | Record the time and location at which each meal was retrieved. | AT11#AT12 | **Achieve** – Target: retrieval time and location recorded for each meal. | AND | Both pieces of information are explicitly required ("when **and** where"); no order implied between logging each → parallel. |
+| **G12** – Retrieve Dirty Dishes from Room | Retrieve the dirty dishes from the inpatient room following a pick-up call. | G13;G15 | **Achieve** – Target: dirty dishes removed from the room. | AND | Must gain access to the room before dishes can be collected → sequential, AND. |
+| **G13** – Manage Room Access | Gain access to the room by opening the door, based on whether the occupant signals they can open it. | AT13;G14 | **Achieve** – Target: the door is opened, granting access. | AND | Receiving the occupant's signal must precede the door-opening action it conditions → sequential, AND. |
+| **G14** – Open Room Door | Open the door, preferring the room occupant, falling back to another robot if they cannot. | FALLBACK(AT14,AT15) | **Achieve** – Target: the door is open. | AND | Explicit conditional ("signal **if** they can open the door") defines a primary/alternative structure → FALLBACK, hence AND. |
+| **G15** – Collect Dirty Dishes | Collect the dirty dishes unassisted, with two robots, or with robot(s)+human. | (AT16#AT17)#AT18 | **Achieve** – Target: dishes collected from the room. | OR | Presented as three alternative modes with no stated triggering condition/order between them → plain OR, parallel. |
+
+---
+
+## Task Table
+
+| Name | Text | Relation | Location | # Robots | Justification |
+|---|---|---|---|---|---|
+| **AT1** – Place Meal on Room Table | Place the meal onto the room table using the robot's manipulation skill. | OR (w/ G4) | Inpatient room (table) | 1 | "Room table" is explicitly cited. Only one robot with the special manipulation skill is mentioned — no cooperation stated. |
+| **AT2** – Check Inpatient Record | Query the inpatient record for information on the patient's ability to retrieve food. | AND (w/ AT3) | Inpatient room | 1 | No separate location is given in the text for this specific check; it is bound to the in-room delivery assessment, paired with the presence check explicitly set "into the room." One robot performs the query. |
+| **AT3** – Detect Companion/Nurse Presence | Detect whether a companion or nurse is present in the room. | AND (w/ AT2) | Inpatient room | 1 | Explicitly "the presence of a companion into the room." Single delivering robot senses this. |
+| **AT4** – Indicate Assigned Meal | Signal which of the multiple carried meals is assigned to this inpatient. | AND (w/ G9) | Inpatient room | 1 | "The robot should indicate which meal should be retrieved" — the carrying robot itself performs this. |
+| **AT5** – Inpatient Retrieves Meal | The inpatient takes the assigned meal from the tray. | FALLBACK-step 1 | Inpatient room | 1 | Single delivering robot's tray; no additional robots mentioned. |
+| **AT6** – Companion Retrieves Meal | The companion takes the assigned meal from the tray. | FALLBACK-step 2 | Inpatient room | 1 | Same reasoning as AT5. |
+| **AT7** – Nurse Retrieves Meal | The nurse takes the assigned meal from the tray. | FALLBACK-step 3 | Inpatient room | 1 | Same reasoning as AT5. |
+| **AT8** – Retrieve Meal with Robot-Robot Cooperation | A second robot cooperates to retrieve the meal when no human can. | FALLBACK alt. (w/ G8) | Inpatient room | 2 | "Cooperation with... another robot" explicitly implies two robots. |
+| **AT9** – Detect Retrieved Meal Identity | Determine which meal was actually taken. | AND (w/ AT10) | Inpatient room | 1 | Single delivering robot observes its own tray. |
+| **AT10** – Generate Wrong-Meal Alert ⚠️ | Generate an alert if the retrieved meal does not match the assignment. | AND (w/ AT9) | Inpatient room | 1 | Same robot that tracks the tray. **Contradiction flagged**: the description both requires and forbids this alert under the same condition; implemented per the general rule pending clarification. |
+| **AT11** – Record Retrieval Time | Log the timestamp of meal retrieval. | AND (w/ AT12) | Inpatient room | 1 | Delivering robot logs its own event. |
+| **AT12** – Record Retrieval Location | Log the location of meal retrieval. | AND (w/ AT11) | Inpatient room | 1 | Same reasoning as AT11. |
+| **AT13** – Receive Door-Opening Signal | Receive the occupant's signal on whether they can open the door. | AND (w/ G14) | Room door | 1 | "That person can signal if they can open the door when the robot comes to it" — the arriving robot receives this. |
+| **AT14** – Open Door with Human Cooperation | The room occupant opens the door for the robot. | FALLBACK-step 1 | Room door | 1 | "Cooperation with... a human" — one robot is party to this. |
+| **AT15** – Open Door with Robot Cooperation | Another robot cooperates to open the door. | FALLBACK alt. | Room door | 2 | "Cooperation with another robot" explicitly implies two robots. |
+| **AT16** – Collect Dishes Unassisted | A single robot collects the dishes without help. | OR | Inpatient room | 1 | Explicitly "unassisted." |
+| **AT17** – Collect Dishes, Two-Robot Cooperation | Two robots cooperate to collect the dishes. | OR | Inpatient room | 2 | Explicitly "cooperation of two robots." |
+| **AT18** – Collect Dishes, Robot-Human Cooperation ⚠️ | Robot(s) cooperate with a human to collect the dishes. | OR | Inpatient room | [1,2] | "Cooperation of robots and a human" uses plural "robots" ambiguously; modeled as a range rather than guessing a specific count. |
+
+---
+
+## Summary Table
+
+| ID | Name | Node Type |
+|---|---|---|
+| G1 | Provide Meal Delivery & Dish Collection Service | Goal (Achieve) |
+| G2 | Deliver Food to Inpatient Room | Goal (Achieve) |
+| G3 | Select and Perform Delivery Method | Goal (Achieve) |
+| AT1 | Place Meal on Room Table | Task |
+| G4 | Fetch Meal from Robot Tray | Goal (Achieve) |
+| G5 | Determine Capable Retrieving Agent | Goal (Query) |
+| AT2 | Check Inpatient Record | Task |
+| AT3 | Detect Companion/Nurse Presence | Task |
+| G6 | Execute Tray Retrieval with Monitoring | Goal (Achieve) |
+| G7 | Execute Retrieval Cooperation | Goal (Achieve) |
+| G8 | Human-Assisted Retrieval | Goal (Achieve) |
+| AT4 | Indicate Assigned Meal | Task |
+| G9 | Human Retrieves Meal from Tray | Goal (Achieve) |
+| AT5 | Inpatient Retrieves Meal | Task |
+| AT6 | Companion Retrieves Meal | Task |
+| AT7 | Nurse Retrieves Meal | Task |
+| AT8 | Retrieve Meal, Robot-Robot Cooperation | Task |
+| G10 | Monitor for Wrong Meal Retrieval | Goal (Perform) ⚠️ |
+| AT9 | Detect Retrieved Meal Identity | Task |
+| AT10 | Generate Wrong-Meal Alert | Task ⚠️ |
+| G11 | Track Meal Retrieval | Goal (Achieve) |
+| AT11 | Record Retrieval Time | Task |
+| AT12 | Record Retrieval Location | Task |
+| G12 | Retrieve Dirty Dishes from Room | Goal (Achieve) |
+| G13 | Manage Room Access | Goal (Achieve) |
+| AT13 | Receive Door-Opening Signal | Task |
+| G14 | Open Room Door | Goal (Achieve) |
+| AT14 | Open Door, Human Cooperation | Task |
+| AT15 | Open Door, Robot Cooperation | Task |
+| G15 | Collect Dirty Dishes | Goal (Achieve) |
+| AT16 | Collect Dishes Unassisted | Task |
+| AT17 | Collect Dishes, Two-Robot Cooperation | Task |
+| AT18 | Collect Dishes, Robot-Human Cooperation | Task ⚠️ |
+
+---
+
+## Logical Relationships
+
+- **G1 -> G2, G12 [AND] (parallel)**
+ - *Justification*: Food delivery and dish collection are both required system responsibilities (not alternatives), and nothing ties their execution order together — they're triggered by independent events.
+
+- **G2 -> G3, G11 [AND] (sequential)**
+ - *Justification*: Delivery and the subsequent tracking of "when and where retrieved" are both required; tracking logically follows the delivery event.
+
+- **G3 -> AT1, G4 [OR] (parallel)**
+ - *Justification*: Table-placement and tray-fetch are explicit alternatives ("...or...") with no stated condition for choosing one over the other.
+
+- **G4 -> G5, G6 [AND] (sequential)**
+ - *Justification*: The capable retrieving agent must be determined before retrieval is attempted.
+
+- **G5 -> AT2, AT3 [AND] (parallel)**
+ - *Justification*: Both the patient-record check and the room-presence detection are jointly required ("according to information about the patient **and** the presence of a companion"), with no stated order.
+
+- **G6 -> G7, G10 [AND] (sequential)**
+ - *Justification*: Verifying/monitoring correctness of the retrieved meal happens after the retrieval act itself.
+
+- **G7 -> G8, AT8 [AND] FALLBACK(G8, AT8)**
+ - *Justification*: The description explicitly gives a failure condition (human inability/unavailability) that triggers the robot-robot alternative — this is a textbook FALLBACK, which mandates AND-decomposition.
+
+- **G8 -> AT4, G9 [AND] (sequential)**
+ - *Justification*: The meal must be indicated to the retriever before they can take the correct one.
+
+- **G9 -> AT5, AT6, AT7 [AND] FALLBACK(FALLBACK(AT5,AT6),AT7)**
+ - *Justification*: Explicit conditions are given for escalating through inpatient → companion → nurse ("inpatient could be unable," "companion visitor or nurse could not be available"), matching the FALLBACK pattern; nested because FALLBACK is strictly binary.
+
+- **G10 -> AT9, AT10 [AND] (sequential)**
+ - *Justification*: The system must detect what was retrieved before it can decide whether to alert.
+
+- **G11 -> AT11, AT12 [AND] (parallel)**
+ - *Justification*: Time and location are both explicitly required ("when **and** where"), with no stated order between logging each.
+
+- **G12 -> G13, G15 [AND] (sequential)**
+ - *Justification*: Room access (door) must be gained before dishes can be physically collected.
+
+- **G13 -> AT13, G14 [AND] (sequential)**
+ - *Justification*: The occupant's signal about door-opening ability must be received before the corresponding opening action is taken.
+
+- **G14 -> AT14, AT15 [AND] FALLBACK(AT14, AT15)**
+ - *Justification*: The explicit conditional ("signal **if** they can open the door") defines a preferred/alternative structure, which is FALLBACK (hence AND).
+
+- **G15 -> AT16, AT17, AT18 [OR] (parallel, nested)**
+ - *Justification*: Three alternative collection modes are listed with no triggering condition or stated order between them — plain OR.
+
+---
+
+### Open items requiring clarification before formalizing this model further:
+1. **Contradictory alert requirement** (G10/AT10) — needs stakeholder resolution.
+2. **Location of the inpatient-record check** (AT2) — inferred as "inpatient room"; confirm if this check actually happens elsewhere (e.g., before departure from the kitchen).
+3. **Robot count for dish collection with "robots and a human"** (AT18) — confirm whether this always means exactly one robot or potentially more.
