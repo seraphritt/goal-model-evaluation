@@ -1,0 +1,126 @@
+# Goal Model Analysis — Hospital Lab Sample Transport (Multi-Robot System)
+
+## Step 1 — Identifying the agents and filtering non-robot actions
+
+Before building the tree, I went through the description sentence by sentence and classified every action by *who* performs it, because the rule "goals/tasks with zero robots must not appear" is the single biggest constraint on this model.
+
+| Description fragment | Actor | Robot involved? | Decision |
+|---|---|---|---|
+| "A nurse... can request a delivery" | Nurse | No | **Excluded** (trigger only, not modeled) |
+| "Each sample before collection is identified with a barcode" | Unspecified (implicitly human/manual) | No | **Excluded** |
+| "The nurse inserts data... in a track system" | Nurse | No | **Excluded** |
+| "Samples are transported in secure locked drawers" | Transport mechanism | Yes (a delivery/transport robot is the only way a multi-robot system physically moves the drawer) | **Included** |
+| "...picked by a robotic arm **or** laboratory personnel" | Robotic arm / Personnel | Arm = yes, Personnel = no | **Only robotic-arm branch included**; personnel branch dropped entirely (not an OR with an empty child — just omitted, per the zero-robot rule) |
+| "The robotic arm picks up, scans, sorts, loads" | Robotic arm | Yes | **Included** |
+| "Information about where/when picked should be logged" | Logging function, tied to the arm's pick event (it directly follows the robotic-arm paragraph) | Yes (performed by the picking robot/its controller) | **Included** |
+| "Time between collection and delivery tracked" | Tracking function, tied to the transport robot (it is the only agent present across the whole collection→delivery span) | Yes | **Included** |
+
+This leaves exactly **four robot-relevant concerns**, which the text itself presents as four flat, non-overlapping requirements (no "or" ties them together — they're all needed): **Transport, Processing, Logging, Time-Tracking**. I avoided inventing an artificial "Monitoring" umbrella goal over Logging/Tracking, since the text doesn't group them together and doing so would add structure not supported by the description (redundancy risk).
+
+## Step 2 — Why there's no OR and (almost) no Fallback
+
+- The only "or" in the whole text ("robotic arm **or** laboratory personnel") does **not** become an OR-decomposition, because one branch has zero robots and must be dropped entirely — leaving a single, direct path (robotic arm picks). An OR needs ≥2 real children; here there is effectively only one.
+- Fallback requires an **explicit stated order with a failure/alternative condition** ("if X fails, do Y"). Nothing in the text says "if the robotic arm fails to pick the sample, then..." — the arm/personnel choice is not framed as primary-attempt-then-alternative-on-failure, it's a plain alternative (and already reduced to one option). So **no FALLBACK is justified anywhere in this model.**
+- Every decomposition I use is therefore **AND** — all identified robot behaviors are complementary and jointly required.
+
+## Step 3 — Determining sequence vs. parallelism
+
+- **Transport → Processing**: the sample physically cannot be picked/scanned/sorted/loaded before it arrives — the text's own paragraph order (transport described, then lab handling described) plus physical causality justify a **sequential** link.
+- **Securing in the drawer → moving the drawer**: you cannot transport a drawer that hasn't been loaded/locked first — **sequential**.
+- **Pick → Scan → Sort → Load**: the text lists these with "picks up... scans... sorts, and loads" — a clear left-to-right order, explicitly sequential, not merely possible-in-parallel.
+- **Logging** (tied to the pick event) and **Time-tracking** (spanning collection→delivery) are cross-cutting: nothing in the text forces them to block the main sequence, so I modeled them as able to run **in parallel** (`#`) alongside the phase they monitor — logging alongside processing, time-tracking alongside the whole collection-to-delivery span (which starts at/with transport).
+
+## Step 4 — Goal type classification rationale (summarized; full justification in the table)
+
+- **G0, G1, G2, G3** are **Achieve** goals: each has a clear target *state* to reach (sample delivered; sample processed; pick info recorded).
+- **G4** is a **Query** goal: "tracked" here means obtaining a measurement (elapsed time) from the world, not causing a state change — it matches the Query definition almost exactly ("Fetch Occupied Rooms" ≈ "Fetch elapsed time").
+
+---
+
+## Goal Model Tree (overview)
+
+```
+G0: Transport and Process Lab Sample [AND] — (G1#G4);(G2#G3)
+├── G1: Transport Sample to Laboratory [AND] — AT1;AT2
+│     ├── AT1: Secure Sample in Locked Drawer
+│     └── AT2: Transport Locked Drawer to Laboratory
+├── G2: Process Sample in Laboratory [AND] — AT3;AT4;AT5;AT6
+│     ├── AT3: Pick Up Sample
+│     ├── AT4: Scan Sample Barcode
+│     ├── AT5: Sort Sample
+│     └── AT6: Load Sample into Entry-Module
+├── G3: Log Sample Pick Information [AND] — leaf goal → AT7
+│     └── AT7: Log Pick Location and Timestamp
+└── G4: Track Sample Transport Time [AND] — leaf goal → AT8
+      └── AT8: Measure Elapsed Collection-to-Delivery Time
+```
+
+---
+
+## Goals Table
+
+| Name | Text | Runtime | Goal Type | Target Condition / QueriedProperty | Relation (to parent) | Justification |
+|---|---|---|---|---|---|---|
+| **G0: Transport and Process Lab Sample** | The overall mission goal: get a requested lab sample from the patient floor to the laboratory, process it, and ensure it is logged and time-tracked per protocol. | (G1#G4);(G2#G3) | **Achieve** | Target: the sample has been delivered to the laboratory, processed through the analysis-machine entry point, with its pick-up securely logged and its transport time tracked. | — (root) | This is the mission's umbrella intent; it is clearly state-oriented ("samples should be transported...to the laboratory"), matching the Achieve definition rather than a single atomic action. |
+| **G1: Transport Sample to Laboratory** | Move the collected sample, secured in a locked drawer, from the patient floor to the laboratory. | AT1;AT2 | **Achieve** — Target: sample is enclosed in a secure locked drawer and physically delivered to the laboratory. | — | AND | Directly stated requirement ("Lab samples should be transported...", "transported in secure locked drawers"). It's a state to be reached (sample at the lab), not a one-off action, so Achieve fits, not Perform. |
+| **G2: Process Sample in Laboratory** | Have the robotic arm pick, scan, sort, and load the sample into the analysis machine. | AT3;AT4;AT5;AT6 | **Achieve** — Target: sample is scanned, sorted, and physically loaded into the entry-module of the analysis machine. | — | AND | The paragraph describes a chain of actions whose purpose is reaching a well-defined end-state (sample inside the entry-module), so it's Achieve rather than Perform (which would apply only if no resulting state mattered, e.g., a bare "scan" action with no downstream condition). |
+| **G3: Log Sample Pick Information** | Record where and when the sample was picked, and store this securely. | — (single task, leaf-level goal) | **Achieve** — Target: the pick location and timestamp for the sample are securely recorded in the system. | — | AND | Text explicitly states this "should be logged securely" — a state (information now exists, securely stored) must be reached, which is the hallmark of an Achieve goal, as opposed to Query (no information is being retrieved here, information is being *written*). |
+| **G4: Track Sample Transport Time** | Determine and record the elapsed time between sample collection and its delivery to the laboratory. | — (single task, leaf-level goal) | **Query** — QueriedProperty: elapsed time between sample collection and laboratory delivery. | — | AND | The purpose here is to obtain a piece of information (a duration) about the world in order to check it against protocol — this matches the Query definition ("retrieve information... as the result of a query") far better than Achieve, since no physical world-state is being changed, only measured. |
+
+---
+
+## Tasks Table
+
+| Name | Text | Relation (to siblings) | Location | Number of Robots | Justification |
+|---|---|---|---|---|---|
+| **AT1: Secure Sample in Locked Drawer** | Place/seal the collected sample inside a secure locked drawer at the patient floor, in preparation for transport. | AND | Patient Floor | 1 | Text: "Samples are transported in secure locked drawers" implies the drawer must be secured before movement; location is the explicit "patient floors" mention. One robot/mechanism is assumed since the text never implies multiple robots collaborate on a single drawer. |
+| **AT2: Transport Locked Drawer to Laboratory** | Carry the secured drawer containing the sample from the patient floor to the laboratory. | AND | Patient Floor; Laboratory | 1 | Directly derived from "transported from patient floors to the laboratory." Both endpoints are explicitly named in the description, so the location is modeled as the collection {Patient Floor, Laboratory}. A single transport robot fulfills a single delivery request (text: "a nurse... can request **a** delivery," singular). |
+| **AT3: Pick Up Sample** | The robotic arm picks the sample up from the delivered drawer at the laboratory. | AND | Laboratory | 1 | Explicit text: "The robotic arm picks up samples." Only one arm is mentioned ("a robotic arm"), so Number of Robots = 1. |
+| **AT4: Scan Sample Barcode** | The robotic arm scans the barcode on the picked-up sample. | AND | Laboratory | 1 | Explicit text: "...scans the barcode in each sample." Same arm performs this, consistent with the single sequential chain described. |
+| **AT5: Sort Sample** | The robotic arm sorts the scanned sample. | AND | Laboratory | 1 | Explicit text: "...sorts..." — same robotic arm continues the chain. |
+| **AT6: Load Sample into Entry-Module** | The robotic arm loads the sorted sample into the entry-module of the analysis machine. | AND | Laboratory | 1 | Explicit text: "...and loads the samples into the entry-module of the analysis machines." Completes the arm's sequential task chain. |
+| **AT7: Log Pick Location and Timestamp** | Securely record the location and time at which the sample was picked up. | AND (sole task under G3) | Laboratory | 1 | Text: "Information about where and when a given sample was picked should be logged securely" — placed immediately after the robotic-arm paragraph, so it is modeled as being recorded by the same picking robot/its controller, at the Laboratory location where the pick (AT3) occurs. |
+| **AT8: Measure Elapsed Collection-to-Delivery Time** | Record timestamps at sample collection and at laboratory delivery, and compute the elapsed duration for protocol compliance checking. | AND (sole task under G4) | Patient Floor; Laboratory | 1 | Text: "The time between sample collection and laboratory delivery should be tracked." The transport robot (AT1/AT2) is the only agent present at both endpoints of this interval, so it is the natural agent to timestamp collection (Patient Floor) and delivery (Laboratory). |
+
+> Note on single-task goals (G3, G4): the decomposition rules call for a minimum of two children when a genuine AND/OR split exists in the text. For logging and time-tracking, the mission description specifies exactly **one** concrete robot action each — inventing a second task would mean fabricating detail not present in the description, which the instructions explicitly forbid ("You should not make up a location" / tasks). I therefore kept these as single-task goals rather than artificially padding the tree.
+
+---
+
+## Logical Relationships
+
+- **G0 -> G1, G2, G3, G4 [AND] [(G1#G4);(G2#G3)]**
+  - **Justification**: All four behaviors (transport, lab processing, logging, time-tracking) are independently stated as required ("should be transported...", "...picks up, scans, sorts, loads...", "...should be logged securely", "...should be tracked") with no "or" connecting them — a clear AND. Transport must complete before lab processing can start (physical precondition), hence `G1;G2`. Time-tracking (G4) spans the same interval as the transport leg (collection-to-delivery), so it runs in parallel with G1: `G1#G4`. Logging (G3) is tied to the pick event that opens the processing phase, so it runs in parallel with G2: `G2#G3`. Parentheses combine the two different operators (`;` and `#`) unambiguously: `(G1#G4);(G2#G3)`.
+
+- **G1 -> AT1, AT2 [AND] (sequential)**
+  - **Justification**: A drawer must be secured/locked before it can be moved — "Samples are transported in secure locked drawers" links the two actions as jointly necessary, with the securing action logically preceding transport. No failure/alternative condition is stated, so this is sequential, not fallback.
+
+- **G2 -> AT3, AT4, AT5, AT6 [AND] (sequential)**
+  - **Justification**: The description lists these four actions in one sentence joined by "and," in an explicit left-to-right order ("picks up samples, scans the barcode..., sorts, and loads..."), so all four are required (AND) and must occur in that stated order (sequential), with no indication any of them could occur in parallel or as a fail-over alternative.
+
+- **G3 -> AT7 [AND]**
+  - **Justification**: The single explicit requirement ("logged securely") is mapped to one task; AND is used nominally since it is the sole, fully required action for this goal — there is no alternative or optional path mentioned.
+
+- **G4 -> AT8 [AND]**
+  - **Justification**: Likewise, the single stated requirement ("time... should be tracked") maps to one task that must be performed for the goal to be satisfied.
+
+---
+
+## Summary Table
+
+| ID | Type | Name | Parent | Relation to Parent | Runtime |
+|---|---|---|---|---|---|
+| G0 | Goal | Transport and Process Lab Sample | — | — | (G1#G4);(G2#G3) |
+| G1 | Goal | Transport Sample to Laboratory | G0 | AND | AT1;AT2 |
+| G2 | Goal | Process Sample in Laboratory | G0 | AND | AT3;AT4;AT5;AT6 |
+| G3 | Goal | Log Sample Pick Information | G0 | AND | — (leaf goal) |
+| G4 | Goal | Track Sample Transport Time | G0 | AND | — (leaf goal) |
+| AT1 | Task | Secure Sample in Locked Drawer | G1 | AND | — |
+| AT2 | Task | Transport Locked Drawer to Laboratory | G1 | AND | — |
+| AT3 | Task | Pick Up Sample | G2 | AND | — |
+| AT4 | Task | Scan Sample Barcode | G2 | AND | — |
+| AT5 | Task | Sort Sample | G2 | AND | — |
+| AT6 | Task | Load Sample into Entry-Module | G2 | AND | — |
+| AT7 | Task | Log Pick Location and Timestamp | G3 | AND | — |
+| AT8 | Task | Measure Elapsed Collection-to-Delivery Time | G4 | AND | — |
+
+**Excluded from the model (zero-robot actions):** nurse's delivery request, pre-collection barcode identification, nurse's track-system data entry, and the "laboratory personnel" alternative for sample pick-up — none of these are performed by a robot, so per the stated rule they are omitted entirely rather than represented as unfulfilled branches.
