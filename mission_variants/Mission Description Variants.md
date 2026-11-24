@@ -28,7 +28,8 @@ Each passage below replaced the corresponding original requirement.
 
 | Mission | What was introduced | Intended alternative interpretations | Related ground-truth goal |
 |---|---|---|---|
-| **Vital Signs** | “If the patient does not answer the questions, an alert should be sent to the responsible nurse/doctor.” | An alert follows **any unanswered question**, or an alert follows **a complete absence of answers**. | **G14 — Assess Status**, **G15 — Send Alert** |
+| **Vital Signs ** | “When a robot 
+comes out of a room where a patient subject to infectious disease is being treated, sterilization must be performed” | The room needs to be sterilized, or the robot needs to be sterilized, or both. | **G16 — Sanitize Robot if Needed** |
 | **Deliver Goods/Equipment** | “In case of failure to return the resource to a checkpoint, the robot must send the report to the sector manager with an alert when delivery resumes.” | “When delivery resumes” specifies the timing of **the alert alone**, or of **both the report and the alert**. | **G13 — Return Objects To Checkpoint**, **G15 — Trigger Alert** |
 | **Lab Samples** | “In the laboratory, a technician positions the transport robot beside the robotic arm so that it can unload the sample.” | “It” refers to **the transport robot** or **the robotic arm**, leaving the unloading responsibility unclear. | **G9 — Approach Arm and Unload Sample**, **G13 — Unload the Sample** |
 | **Food Logistics** | “At pickup, the patient places the dirty dishes on a cart beside the room door for the robot to retrieve.” | The cart is **inside the patient room** or **outside in the corridor**, leaving the pickup location unclear. | **Pickup G6 — Fetch Pickup Room**, **G7 — Pickup Dishes in Patient Room** |
